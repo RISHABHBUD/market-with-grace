@@ -8,22 +8,33 @@ import requests
 
 
 def upload_to_cloudinary(image_path):
-    """Upload image to Cloudinary and return public URL."""
+    """Upload image to Cloudinary using signed upload and return public URL."""
+    import hashlib, time
+
     cloud_name = os.environ["CLOUDINARY_CLOUD_NAME"]
     api_key    = os.environ["CLOUDINARY_API_KEY"]
     api_secret = os.environ["CLOUDINARY_API_SECRET"]
+
+    timestamp  = str(int(time.time()))
+
+    # Build signature
+    params_to_sign = f"timestamp={timestamp}{api_secret}"
+    signature = hashlib.sha1(params_to_sign.encode()).hexdigest()
 
     url = f"https://api.cloudinary.com/v1_1/{cloud_name}/image/upload"
 
     with open(image_path, "rb") as f:
         resp = requests.post(url, files={"file": f}, data={
-            "upload_preset": "ml_default",
-            "api_key": api_key,
-        }, auth=(api_key, api_secret))
+            "api_key":   api_key,
+            "timestamp": timestamp,
+            "signature": signature,
+        })
 
+    if not resp.ok:
+        print(f"  [!] Cloudinary error: {resp.text}")
     resp.raise_for_status()
-    data = resp.json()
-    image_url = data["secure_url"]
+
+    image_url = resp.json()["secure_url"]
     print(f"  [✓] Uploaded to Cloudinary: {image_url}")
     return image_url
 
