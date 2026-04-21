@@ -1,0 +1,64 @@
+name: MarketWithGrace - Auto Post
+
+on:
+  schedule:
+    # 8 posts/day at IST times (UTC = IST - 5:30)
+    # 08:00 IST = 02:30 UTC
+    # 09:30 IST = 04:00 UTC
+    # 11:00 IST = 05:30 UTC
+    # 12:30 IST = 07:00 UTC
+    # 14:00 IST = 08:30 UTC
+    # 15:30 IST = 10:00 UTC
+    # 17:00 IST = 11:30 UTC
+    # 19:00 IST = 13:30 UTC
+    - cron: "30 2 * * 1-5"
+    - cron: "0 4 * * 1-5"
+    - cron: "30 5 * * 1-5"
+    - cron: "0 7 * * 1-5"
+    - cron: "30 8 * * 1-5"
+    - cron: "0 10 * * 1-5"
+    - cron: "30 11 * * 1-5"
+    - cron: "30 13 * * 1-5"
+
+  # Also allow manual trigger from GitHub UI
+  workflow_dispatch:
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed to commit posted.json + posts/ back to repo
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r stock-news-bot/requirements.txt
+
+      - name: Run auto poster
+        env:
+          CLOUDINARY_CLOUD_NAME:  ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY:     ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET:  ${{ secrets.CLOUDINARY_API_SECRET }}
+          INSTAGRAM_USER_ID:      ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: |
+          cd stock-news-bot
+          python run_auto.py
+
+      - name: Commit posts and tracker back to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add stock-news-bot/posted.json stock-news-bot/posts/
+          git diff --staged --quiet || git commit -m "auto: post $(date +'%Y-%m-%d %H:%M IST')"
+          git push
