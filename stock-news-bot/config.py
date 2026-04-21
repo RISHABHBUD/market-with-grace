@@ -22,9 +22,9 @@ RSS_FEEDS = [
 ]
 
 # Branding
-PAGE_NAME = "MarketWithGrace"
-PAGE_HANDLE = "@marketwithgrace"
-TAGLINE = "Investing, but make it graceful ✨"
+PAGE_NAME = "PrettySmartMoney"
+PAGE_HANDLE = "@prettysmartmoney"
+TAGLINE = "Investing, but make it smart ✨"
 
 # Colors (RGB)
 COLOR_BG = (255, 252, 248)           # warm white
@@ -39,10 +39,10 @@ COLOR_ACCENT = (210, 160, 190)      # dusty rose accent
 COLOR_WHITE = (255, 255, 255)
 
 HASHTAGS = [
-    "#MarketWithGrace", "#IndianStockMarket", "#StockMarketIndia",
-    "#NSE", "#BSE", "#Nifty50", "#Sensex", "#InvestingForWomen",
-    "#StockNews", "#QuarterlyResults", "#FinanceForAll", "#GirlsWhoInvest",
-    "#MarketUpdate", "#InvestSmart", "#WealthBuilding"
+    "#PrettySmartMoney", "#IndianStockMarket", "#StockMarketIndia",
+    "#NSE", "#BSE", "#Nifty50", "#Sensex", "#StockNews",
+    "#QuarterlyResults", "#FinanceForAll", "#MarketUpdate",
+    "#InvestSmart", "#WealthBuilding", "#StockMarket", "#Trading"
 ]
 
 OUTPUT_FOLDER = "posts"
