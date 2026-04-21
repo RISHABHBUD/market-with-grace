@@ -1,6 +1,7 @@
 from PIL import Image, ImageDraw, ImageFont
 import textwrap, re
 from datetime import datetime
+from config import PAGE_NAME, PAGE_HANDLE
 
 WIDTH, HEIGHT = 1080, 1080
 
@@ -177,8 +178,8 @@ def create_post_image(article, output_path):
 
     brand_f  = get_font(40, bold=True)
     handle_f = get_font(24)
-    brand    = "MarketWithGrace"
-    handle   = "@marketwithgrace   |   Daily Market Updates"
+    brand    = PAGE_NAME
+    handle   = PAGE_HANDLE + "   |   Daily Market Updates"
 
     # Clamp handle text if too wide
     while tw(draw, handle, handle_f) > (WIDTH - MARGIN * 2 - 60) and len(handle) > 10:
