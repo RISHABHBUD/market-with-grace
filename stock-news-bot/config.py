@@ -22,8 +22,8 @@ RSS_FEEDS = [
 ]
 
 # Branding
-PAGE_NAME = "MarketAPI"
-PAGE_HANDLE = "@marketapi"
+PAGE_NAME = "StockDev.in"
+PAGE_HANDLE = "@stockdev.in"
 TAGLINE = "Where markets meet technology ⚡"
 
 # Colors (RGB)
@@ -39,7 +39,7 @@ COLOR_ACCENT = (210, 160, 190)      # dusty rose accent
 COLOR_WHITE = (255, 255, 255)
 
 HASHTAGS = [
-    "#MarketAPI", "#IndianStockMarket", "#StockMarketIndia",
+    "#StockDevIn", "#IndianStockMarket", "#StockMarketIndia",
     "#NSE", "#BSE", "#Nifty50", "#Sensex", "#StockNews",
     "#QuarterlyResults", "#FinTech", "#MarketUpdate",
     "#InvestSmart", "#WealthBuilding", "#AlgoTrading", "#TechAndFinance"
