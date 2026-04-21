@@ -54,9 +54,10 @@ def post_to_instagram(image_url, caption):
         "caption":      caption,
         "access_token": access_token,
     })
-    print(f"  Instagram container status: {resp.status_code}")
-    print(f"  Instagram container response: {resp.text[:300]}")
-    resp.raise_for_status()
+    print(f"  Instagram container status: {resp.status_code}", flush=True)
+    print(f"  Instagram container response: {resp.text}", flush=True)
+    if not resp.ok:
+        raise Exception(f"Instagram media creation failed: {resp.text}")
     container_id = resp.json()["id"]
     print(f"  [✓] Media container created: {container_id}")
 
