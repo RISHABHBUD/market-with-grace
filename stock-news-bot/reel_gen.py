@@ -1,570 +1,477 @@
 """
-Stock Spotlight Reel Generator
-Creates a 25-second vertical video (1080x1920) for Instagram Reels.
+Stock Spotlight Reel Generator — StockDev.in
+25-second vertical reel (1080x1920) for Instagram.
 
-Sections:
-  0-3s   : Intro — StockDev.in branding animates in
-  3-8s   : Stock name + badge slides in
-  8-16s  : Price chart draws itself
-  16-22s : Key headline text types in word by word
-  22-25s : Outro — CTA + handle
+Timeline:
+  0-2s   : Hook — punchy question flashes in
+  2-5s   : Stock card — name, price, change with counter animation
+  5-13s  : Chart draws + 52w high/low + volume bar
+  13-18s : Key stats ticker (P/E, Mkt Cap, EPS)
+  18-23s : Headline types in fast
+  23-25s : Outro CTA
 """
 
-import os
-import re
-import random
-import textwrap
+import os, re, random, textwrap
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from moviepy import (
-    ImageClip, AudioFileClip, CompositeVideoClip,
-    concatenate_videoclips
-)
+from moviepy import VideoClip, AudioFileClip, concatenate_videoclips
 import yfinance as yf
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from config import PAGE_NAME, PAGE_HANDLE
 
-# ── Canvas ─────────────────────────────────────────────────────
-W, H   = 1080, 1920
-FPS    = 30
-DURATION = 25  # seconds
+W, H, FPS = 1080, 1920, 30
+DURATION   = 25
+MUSIC_DIR  = os.path.join(os.path.dirname(__file__), "music")
 
-# ── Palette ────────────────────────────────────────────────────
-BG_TOP        = (225, 210, 255)
-BG_BOTTOM     = (255, 235, 248)
-CARD_BG       = (255, 255, 255)
-ACCENT        = (150, 100, 215)
-ACCENT_LIGHT  = (220, 200, 255)
-TEXT_DARK     = (35, 20, 70)
-TEXT_MID      = (100, 80, 150)
-TEXT_LIGHT    = (170, 145, 200)
-GREEN         = (40, 180, 100)
-RED           = (220, 60, 80)
-WHITE         = (255, 255, 255)
-GOLD          = (255, 200, 60)
+# Palette
+BG_TOP       = (232, 218, 255)
+BG_BOT       = (255, 238, 250)
+CARD         = (255, 255, 255)
+ACCENT       = (140, 90, 210)
+ACCENT2      = (180, 130, 240)
+ACCENT_LIGHT = (225, 205, 255)
+TEXT_DARK    = (30, 15, 65)
+TEXT_MID     = (100, 75, 150)
+TEXT_LIGHT   = (165, 140, 195)
+GREEN        = (30, 175, 95)
+RED          = (215, 55, 75)
+GOLD         = (255, 195, 50)
+WHITE        = (255, 255, 255)
 
-MUSIC_DIR = os.path.join(os.path.dirname(__file__), "music")
-
-
-# ── Fonts ──────────────────────────────────────────────────────
 def get_font(size, bold=False):
-    candidates = (
-        ["arialbd.ttf", "Arial_Bold.ttf", "DejaVuSans-Bold.ttf",
-         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-        if bold else
-        ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf",
-         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
-    )
-    for p in candidates:
-        try:
-            return ImageFont.truetype(p, size)
-        except Exception:
-            continue
+    for p in (["arialbd.ttf","Arial_Bold.ttf","DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+               if bold else
+               ["arial.ttf","Arial.ttf","DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]):
+        try: return ImageFont.truetype(p, size)
+        except: continue
     return ImageFont.load_default()
 
+def tw(draw, text, font):
+    b = draw.textbbox((0,0), text, font=font); return b[2]-b[0]
 
-# ── Gradient background ────────────────────────────────────────
-def make_gradient(w, h, top, bottom):
+def cx(draw, text, font, width=W):
+    return (width - tw(draw, text, font)) // 2
+
+def grad(w, h, top, bot):
     arr = np.zeros((h, w, 3), dtype=np.uint8)
     for y in range(h):
-        t = y / h
-        arr[y] = [int(top[i] + (bottom[i] - top[i]) * t) for i in range(3)]
+        t = y/h
+        arr[y] = [int(top[i]+(bot[i]-top[i])*t) for i in range(3)]
     return arr
 
+def ease_out(t, total): return 1-(1-min(t/max(total,0.001),1))**3
+def ease_in_out(t, total):
+    p = min(t/max(total,0.001),1)
+    return p*p*(3-2*p)
 
-# ── PIL helpers ────────────────────────────────────────────────
-def pil_to_np(img):
-    return np.array(img.convert("RGB"))
+def base(draw_fn=None):
+    img = Image.fromarray(grad(W, H, BG_TOP, BG_BOT))
+    # Soft blobs
+    d = ImageDraw.Draw(img)
+    d.ellipse([W-280,-120,W+80,240], fill=(210,185,250))
+    d.ellipse([-80,H-280,240,H+80], fill=(225,200,255))
+    if draw_fn: draw_fn(d, img)
+    return img
 
-
-def np_frame(arr):
-    """Convert numpy array to moviepy-compatible frame."""
-    return arr.astype(np.uint8)
-
-
-def tw(draw, text, font):
-    bb = draw.textbbox((0, 0), text, font=font)
-    return bb[2] - bb[0]
-
-
-def th(draw, text, font):
-    bb = draw.textbbox((0, 0), text, font=font)
-    return bb[3] - bb[1]
-
-
-def draw_centered(draw, text, font, y, color, width=W):
-    x = (width - tw(draw, text, font)) // 2
-    draw.text((x, y), text, font=font, fill=color)
-
+def brand_bar(draw, y=55, h=145):
+    draw.rounded_rectangle([55,y,W-55,y+h], radius=26, fill=ACCENT)
+    draw.text((cx(draw,PAGE_NAME,get_font(58,True)),y+18),
+              PAGE_NAME, font=get_font(58,True), fill=WHITE)
+    draw.text((cx(draw,PAGE_HANDLE,get_font(32)),y+88),
+              PAGE_HANDLE, font=get_font(32), fill=ACCENT_LIGHT)
 
 # ── Stock data ─────────────────────────────────────────────────
-STOCK_KEYWORDS = {
-    "tata steel": "TATASTEEL.NS",
-    "reliance": "RELIANCE.NS",
-    "infosys": "INFY.NS",
-    "hdfc bank": "HDFCBANK.NS",
-    "icici bank": "ICICIBANK.NS",
-    "wipro": "WIPRO.NS",
-    "tcs": "TCS.NS",
-    "bajaj": "BAJFINANCE.NS",
-    "adani": "ADANIENT.NS",
-    "nestle": "NESTLEIND.NS",
-    "hcl": "HCLTECH.NS",
-    "axis bank": "AXISBANK.NS",
-    "kotak": "KOTAKBANK.NS",
-    "sbi": "SBIN.NS",
-    "maruti": "MARUTI.NS",
-    "ola": "OLAELEC.NS",
-    "zomato": "ZOMATO.NS",
-    "paytm": "PAYTM.NS",
-    "vedanta": "VEDL.NS",
-    "trent": "TRENT.NS",
-    "groww": "GROWW.NS",
-    "suzlon": "SUZLON.NS",
+TICKERS = {
+    "tata steel":"TATASTEEL.NS","tata power":"TATAPOWER.NS",
+    "tata motors":"TATAMOTORS.NS","reliance":"RELIANCE.NS",
+    "infosys":"INFY.NS","hdfc bank":"HDFCBANK.NS",
+    "icici bank":"ICICIBANK.NS","wipro":"WIPRO.NS","tcs":"TCS.NS",
+    "bajaj":"BAJFINANCE.NS","adani":"ADANIENT.NS","nestle":"NESTLEIND.NS",
+    "hcl":"HCLTECH.NS","axis bank":"AXISBANK.NS","kotak":"KOTAKBANK.NS",
+    "sbi":"SBIN.NS","maruti":"MARUTI.NS","zomato":"ZOMATO.NS",
+    "vedanta":"VEDL.NS","trent":"TRENT.NS","suzlon":"SUZLON.NS",
+    "ola":"OLAELEC.NS","paytm":"PAYTM.NS","groww":"GROWW.NS",
 }
 
-NIFTY_TICKER = "^NSEI"
-
-
 def detect_ticker(title):
-    title_lower = title.lower()
-    for keyword, ticker in STOCK_KEYWORDS.items():
-        if keyword in title_lower:
-            return ticker
+    t = title.lower()
+    for k,v in TICKERS.items():
+        if k in t: return v
     return None
 
-
-def fetch_stock_data(ticker):
+def fetch_stock(ticker):
     try:
-        stock = yf.Ticker(ticker)
-        hist  = stock.history(period="30d")
-        info  = stock.info
-        if hist.empty:
-            return None
-        current = hist["Close"].iloc[-1]
-        prev    = hist["Close"].iloc[-2]
-        change  = ((current - prev) / prev) * 100
-        name    = info.get("shortName", ticker.replace(".NS", ""))
-        return {
-            "name":    name,
-            "ticker":  ticker.replace(".NS", ""),
-            "current": current,
-            "change":  change,
-            "history": hist["Close"].tolist()[-20:],
-        }
+        s    = yf.Ticker(ticker)
+        hist = s.history(period="60d")
+        info = s.info
+        if hist.empty: return None
+        cur  = hist["Close"].iloc[-1]
+        prev = hist["Close"].iloc[-2]
+        chg  = (cur-prev)/prev*100
+        hi52 = info.get("fiftyTwoWeekHigh", max(hist["Close"]))
+        lo52 = info.get("fiftyTwoWeekLow",  min(hist["Close"]))
+        pe   = info.get("trailingPE")
+        mcap = info.get("marketCap")
+        vol  = hist["Volume"].iloc[-1]
+        eps  = info.get("trailingEps")
+        name = info.get("shortName", ticker.replace(".NS",""))
+        return dict(name=name, ticker=ticker.replace(".NS",""),
+                    current=cur, prev=prev, change=chg,
+                    hi52=hi52, lo52=lo52, pe=pe, mcap=mcap,
+                    vol=vol, eps=eps,
+                    history=hist["Close"].tolist()[-30:])
     except Exception as e:
-        print(f"  [!] Stock data fetch failed: {e}")
-        return None
+        print(f"  [!] Stock fetch failed: {e}"); return None
 
-
-def fetch_nifty_data():
+def fetch_nifty():
     try:
-        nifty = yf.Ticker(NIFTY_TICKER)
-        hist  = nifty.history(period="7d")
-        if hist.empty:
-            return None
-        current = hist["Close"].iloc[-1]
-        prev    = hist["Close"].iloc[-2]
-        change  = ((current - prev) / prev) * 100
-        return {
-            "name":    "NIFTY 50",
-            "ticker":  "NIFTY",
-            "current": current,
-            "change":  change,
-            "history": hist["Close"].tolist(),
-        }
-    except Exception:
-        return None
+        s    = yf.Ticker("^NSEI")
+        hist = s.history(period="30d")
+        if hist.empty: return None
+        cur  = hist["Close"].iloc[-1]
+        prev = hist["Close"].iloc[-2]
+        return dict(name="NIFTY 50", ticker="NIFTY",
+                    current=cur, prev=prev, change=(cur-prev)/prev*100,
+                    hi52=max(hist["Close"]), lo52=min(hist["Close"]),
+                    pe=None, mcap=None, vol=None, eps=None,
+                    history=hist["Close"].tolist())
+    except: return None
 
+def fmt_mcap(v):
+    if not v: return "N/A"
+    if v >= 1e12: return f"₹{v/1e12:.1f}T"
+    if v >= 1e9:  return f"₹{v/1e9:.1f}B"
+    return f"₹{v/1e6:.0f}M"
 
-# ── Chart generator ────────────────────────────────────────────
-def make_chart_image(prices, change, width=900, height=420):
-    """Generate a clean price chart, return as PIL Image."""
-    color = "#28B464" if change >= 0 else "#DC3C50"
-    bg    = (255, 255, 255)
+def fmt_vol(v):
+    if not v: return "N/A"
+    if v >= 1e7: return f"{v/1e7:.1f}Cr"
+    if v >= 1e5: return f"{v/1e5:.1f}L"
+    return str(int(v))
 
-    fig, ax = plt.subplots(figsize=(width / 100, height / 100), dpi=100)
+def hook_question(title):
+    t = title.lower()
+    if any(x in t for x in ["jump","surge","soar","rally","gain","rise","up"]):
+        return "Is this the breakout\nyou've been waiting for?"
+    if any(x in t for x in ["fall","drop","crash","down","loss","decline"]):
+        return "Should you be\nworried about this stock?"
+    if any(x in t for x in ["result","profit","earnings","q4","q3","q2","q1"]):
+        return "Results are in.\nWhat does it mean for you?"
+    if any(x in t for x in ["dividend","bonus"]):
+        return "Free money alert!\nHere's what's happening."
+    if any(x in t for x in ["buy","target","bullish"]):
+        return "Analysts are bullish.\nShould you follow?"
+    return "Big news in the\nstock market today."
+
+# ── Chart ──────────────────────────────────────────────────────
+def make_chart(prices, change, w=940, h=400):
+    color = "#1EAF5F" if change >= 0 else "#D73748"
+    fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=100)
     fig.patch.set_facecolor("#FFFFFF")
-    ax.set_facecolor("#F8F5FF")
-
+    ax.set_facecolor("#F5F0FF")
     x = list(range(len(prices)))
-    ax.plot(x, prices, color=color, linewidth=3, zorder=3)
-    ax.fill_between(x, prices, min(prices) * 0.998,
-                    color=color, alpha=0.15, zorder=2)
-
-    # Style
-    ax.spines["top"].set_visible(False)
-    ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#E0D8F0")
-    ax.spines["bottom"].set_color("#E0D8F0")
-    ax.tick_params(colors="#A090C0", labelsize=9)
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"₹{v:,.0f}"))
-    ax.grid(axis="y", color="#EDE8F8", linewidth=0.8, zorder=1)
-
-    plt.tight_layout(pad=0.5)
-
-    # Save to PIL
+    ax.plot(x, prices, color=color, linewidth=3.5, zorder=3)
+    ax.fill_between(x, prices, min(prices)*0.997, color=color, alpha=0.18, zorder=2)
+    ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#D0C8E8"); ax.spines["bottom"].set_color("#D0C8E8")
+    ax.tick_params(colors="#9080B8", labelsize=9)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v,_: f"₹{v:,.0f}"))
+    ax.grid(axis="y", color="#EAE4F8", linewidth=0.8, zorder=1)
+    plt.tight_layout(pad=0.4)
     from io import BytesIO
     buf = BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight",
-                facecolor=fig.get_facecolor())
-    plt.close(fig)
-    buf.seek(0)
+    plt.savefig(buf, format="png", bbox_inches="tight", facecolor="#FFFFFF")
+    plt.close(fig); buf.seek(0)
     return Image.open(buf).convert("RGB")
 
-
 # ── Frame builders ─────────────────────────────────────────────
-def build_base_frame():
-    """Gradient background as numpy array."""
-    return make_gradient(W, H, BG_TOP, BG_BOTTOM)
-
-
-def frame_intro(t, total=3.0):
-    """0-3s: Branding slides down from top."""
-    progress = min(t / 1.2, 1.0)
-    ease     = 1 - (1 - progress) ** 3  # ease-out cubic
-
-    img  = Image.fromarray(build_base_frame())
+def f_hook(t, question):
+    """0-2s: Big hook question flashes in with scale effect."""
+    img  = base()
     draw = ImageDraw.Draw(img)
+    brand_bar(draw)
 
-    # Decorative circles
-    draw.ellipse([W - 200, -100, W + 100, 200], fill=(200, 180, 245))
-    draw.ellipse([-100, H - 200, 200, H + 100], fill=(220, 200, 255))
+    lines = question.split("\n")
+    e = ease_out(t, 0.5)
 
-    # Brand card slides in from top
-    card_h = 180
-    card_y = int(-card_h + (card_h + 120) * ease)
-    draw.rounded_rectangle([60, card_y, W - 60, card_y + card_h],
-                            radius=28, fill=ACCENT)
+    # Pulsing background circle
+    pulse = 1 + 0.04 * np.sin(t * 8)
+    r = int(320 * pulse)
+    draw.ellipse([W//2-r, H//2-r-80, W//2+r, H//2+r-80], fill=(215,195,250))
 
-    brand_f  = get_font(72, bold=True)
-    handle_f = get_font(36)
-    tagline_f = get_font(32)
-
-    draw.text(((W - tw(draw, PAGE_NAME, brand_f)) // 2,
-               card_y + 28), PAGE_NAME, font=brand_f, fill=WHITE)
-    draw.text(((W - tw(draw, PAGE_HANDLE, handle_f)) // 2,
-               card_y + 112), PAGE_HANDLE, font=handle_f, fill=ACCENT_LIGHT)
-
-    # "Stock Spotlight" fades in
-    alpha = int(255 * min(max((t - 1.5) / 1.0, 0), 1))
-    spotlight = "✦ Stock Spotlight ✦"
-    sf = get_font(44, bold=True)
-    # Draw with manual alpha simulation (blend with bg)
-    if alpha > 0:
-        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
-        od = ImageDraw.Draw(overlay)
-        color_a = (*TEXT_MID, alpha)
-        od.text(((W - tw(od, spotlight, sf)) // 2, 340),
-                spotlight, font=sf, fill=color_a)
+    # Flash effect — white overlay fades out
+    if t < 0.15:
+        alpha_val = int(255*(1-t/0.15))
+        overlay = Image.new("RGBA", img.size, (255,255,255,alpha_val))
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
+        draw = ImageDraw.Draw(img)
 
-    return pil_to_np(img)
+    f1 = get_font(int(88*e), bold=True)
+    f2 = get_font(int(72*e), bold=True)
+    fonts = [f1, f2] if len(lines) > 1 else [f1]
+
+    total_h = sum(f.size+16 for f in fonts[:len(lines)])
+    y = H//2 - total_h//2 - 80
+
+    for i, line in enumerate(lines[:2]):
+        f = fonts[min(i, len(fonts)-1)]
+        # Shadow
+        draw.text((cx(draw,line,f)+3, y+3), line, font=f, fill=(180,150,220))
+        draw.text((cx(draw,line,f), y), line, font=f, fill=TEXT_DARK)
+        y += f.size + 16
+
+    # "STOCK SPOTLIGHT" tag at bottom
+    tag = "✦  STOCK SPOTLIGHT  ✦"
+    tf  = get_font(36, bold=True)
+    draw.rounded_rectangle([cx(draw,tag,tf)-24, H-320,
+                             cx(draw,tag,tf)+tw(draw,tag,tf)+24, H-260],
+                            radius=20, fill=ACCENT)
+    draw.text((cx(draw,tag,tf), H-316), tag, font=tf, fill=WHITE)
+
+    return np.array(img)
 
 
-def frame_stock_info(t, stock_data, total=5.0):
-    """3-8s: Stock name, ticker, price, change badge."""
-    progress = min(t / 0.8, 1.0)
-    ease     = 1 - (1 - progress) ** 3
-
-    img  = Image.fromarray(build_base_frame())
+def f_stock(t, sd):
+    """2-5s: Stock card snaps in fast, price counts up."""
+    img  = base()
     draw = ImageDraw.Draw(img)
+    brand_bar(draw)
 
-    # Decorative circles
-    draw.ellipse([W - 200, -100, W + 100, 200], fill=(200, 180, 245))
-    draw.ellipse([-100, H - 200, 200, H + 100], fill=(220, 200, 255))
+    e = ease_out(t, 0.4)
+    card_y = int(H + (220 - H) * e)
+    card_h = 520
 
-    # Brand bar (static at top)
-    draw.rounded_rectangle([60, 60, W - 60, 200], radius=24, fill=ACCENT)
-    bf = get_font(52, bold=True)
-    hf = get_font(30)
-    draw.text(((W - tw(draw, PAGE_NAME, bf)) // 2, 80),
-              PAGE_NAME, font=bf, fill=WHITE)
-    draw.text(((W - tw(draw, PAGE_HANDLE, hf)) // 2, 148),
-              PAGE_HANDLE, font=hf, fill=ACCENT_LIGHT)
+    # Card shadow
+    draw.rounded_rectangle([65+6, card_y+6, W-65+6, card_y+card_h+6],
+                            radius=32, fill=(185,160,225))
+    draw.rounded_rectangle([65, card_y, W-65, card_y+card_h],
+                            radius=32, fill=CARD, outline=(195,170,240), width=2)
+    draw.rounded_rectangle([65, card_y, 80, card_y+card_h], radius=32, fill=ACCENT)
 
-    # Stock card slides up
-    card_y = int(H + (280 - H) * ease)
-    card_h = 380
-    draw.rounded_rectangle([60, card_y, W - 60, card_y + card_h],
-                            radius=32, fill=CARD_BG,
-                            outline=(200, 180, 240), width=2)
-    # Left accent strip
-    draw.rounded_rectangle([60, card_y, 74, card_y + card_h],
-                            radius=32, fill=ACCENT)
+    chg_col = GREEN if sd["change"] >= 0 else RED
+    arrow   = "▲" if sd["change"] >= 0 else "▼"
 
-    name_f    = get_font(68, bold=True)
-    ticker_f  = get_font(36)
-    price_f   = get_font(80, bold=True)
-    change_f  = get_font(44, bold=True)
+    # Stock name
+    name = sd["name"][:20]
+    nf   = get_font(64, bold=True)
+    draw.text((cx(draw,name,nf), card_y+28), name, font=nf, fill=TEXT_DARK)
 
-    name = stock_data["name"][:22]
-    draw.text(((W - tw(draw, name, name_f)) // 2,
-               card_y + 30), name, font=name_f, fill=TEXT_DARK)
+    # Ticker badge
+    tick = f"NSE: {sd['ticker']}"
+    tf2  = get_font(30)
+    tw2  = tw(draw,tick,tf2)+40
+    draw.rounded_rectangle([W//2-tw2//2, card_y+108, W//2+tw2//2, card_y+152],
+                            radius=18, fill=ACCENT_LIGHT)
+    draw.text((cx(draw,tick,tf2), card_y+114), tick, font=tf2, fill=ACCENT)
 
-    ticker_label = f"NSE: {stock_data['ticker']}"
-    draw.text(((W - tw(draw, ticker_label, ticker_f)) // 2,
-               card_y + 112), ticker_label, font=ticker_f, fill=TEXT_LIGHT)
-
-    price_str = f"₹{stock_data['current']:,.2f}"
-    draw.text(((W - tw(draw, price_str, price_f)) // 2,
-               card_y + 168), price_str, font=price_f, fill=TEXT_DARK)
+    # Price counter animation
+    count_progress = min(t/0.8, 1.0)
+    displayed_price = sd["prev"] + (sd["current"]-sd["prev"]) * count_progress
+    price_str = f"₹{displayed_price:,.2f}"
+    pf = get_font(96, bold=True)
+    draw.text((cx(draw,price_str,pf), card_y+172), price_str, font=pf, fill=TEXT_DARK)
 
     # Change badge
-    change    = stock_data["change"]
-    chg_color = GREEN if change >= 0 else RED
-    chg_str   = f"{'▲' if change >= 0 else '▼'} {abs(change):.2f}%  Today"
-    chg_w     = tw(draw, chg_str, change_f) + 48
-    chg_x     = (W - chg_w) // 2
-    draw.rounded_rectangle([chg_x, card_y + 290, chg_x + chg_w, card_y + 350],
-                            radius=24, fill=chg_color)
-    draw.text((chg_x + 24, card_y + 300), chg_str,
-              font=change_f, fill=WHITE)
+    chg_str = f"{arrow} {abs(sd['change']):.2f}%  Today"
+    cf = get_font(44, bold=True)
+    cw = tw(draw,chg_str,cf)+52
+    draw.rounded_rectangle([W//2-cw//2, card_y+300, W//2+cw//2, card_y+360],
+                            radius=26, fill=chg_col)
+    draw.text((W//2-cw//2+26, card_y+308), chg_str, font=cf, fill=WHITE)
 
-    return pil_to_np(img)
+    # 52w high/low mini bars
+    bar_y = card_y + 400
+    draw.text((90, bar_y), "52W", font=get_font(28,True), fill=TEXT_LIGHT)
+    lo_str = f"L: ₹{sd['lo52']:,.0f}"
+    hi_str = f"H: ₹{sd['hi52']:,.0f}"
+    draw.text((90, bar_y+36), lo_str, font=get_font(30), fill=RED)
+    draw.text((W//2+20, bar_y+36), hi_str, font=get_font(30), fill=GREEN)
 
+    # Progress bar showing where current price sits between 52w lo/hi
+    bar_x1, bar_x2 = 90, W-90
+    bar_w = bar_x2 - bar_x1
+    draw.rounded_rectangle([bar_x1, bar_y+80, bar_x2, bar_y+100],
+                            radius=8, fill=ACCENT_LIGHT)
+    if sd["hi52"] > sd["lo52"]:
+        pos = (sd["current"]-sd["lo52"])/(sd["hi52"]-sd["lo52"])
+        pos = max(0.02, min(0.98, pos))
+        fill_w = int(bar_w * pos * min(t/0.6, 1.0))
+        draw.rounded_rectangle([bar_x1, bar_y+80, bar_x1+fill_w, bar_y+100],
+                                radius=8, fill=chg_col)
+        dot_x = bar_x1 + int(bar_w * pos * min(t/0.6, 1.0))
+        draw.ellipse([dot_x-10, bar_y+74, dot_x+10, bar_y+106], fill=chg_col)
 
-def frame_chart(t, stock_data, chart_img, total=8.0):
-    """8-16s: Chart draws itself (reveal left to right)."""
-    img  = Image.fromarray(build_base_frame())
+    return np.array(img)
+
+def f_chart(t, sd, chart_img, total=8.0):
+    """5-13s: Chart draws itself, stats appear below."""
+    img  = base()
     draw = ImageDraw.Draw(img)
+    brand_bar(draw)
 
-    # Decorative circles
-    draw.ellipse([W - 200, -100, W + 100, 200], fill=(200, 180, 245))
-
-    # Brand bar
-    draw.rounded_rectangle([60, 60, W - 60, 200], radius=24, fill=ACCENT)
-    bf = get_font(52, bold=True)
-    hf = get_font(30)
-    draw.text(((W - tw(draw, PAGE_NAME, bf)) // 2, 80),
-              PAGE_NAME, font=bf, fill=WHITE)
-    draw.text(((W - tw(draw, PAGE_HANDLE, hf)) // 2, 148),
-              PAGE_HANDLE, font=hf, fill=ACCENT_LIGHT)
-
-    # "30-Day Price Chart" label
-    lf = get_font(40, bold=True)
-    label = "30-Day Price Chart"
-    draw.text(((W - tw(draw, label, lf)) // 2, 240),
-              label, font=lf, fill=TEXT_MID)
+    lf = get_font(38, bold=True)
+    draw.text((cx(draw,"30-Day Price Chart",lf), 225),
+              "30-Day Price Chart", font=lf, fill=TEXT_MID)
 
     # Chart card
-    chart_card_y = 310
-    chart_card_h = 520
-    draw.rounded_rectangle([60, chart_card_y, W - 60, chart_card_y + chart_card_h],
-                            radius=24, fill=CARD_BG,
-                            outline=(200, 180, 240), width=2)
+    cy2, ch2 = 285, 500
+    draw.rounded_rectangle([55, cy2, W-55, cy2+ch2], radius=24,
+                            fill=CARD, outline=(200,178,240), width=2)
 
-    # Reveal chart progressively
-    reveal = min(t / (total * 0.85), 1.0)
-    cw = chart_img.width
-    ch = chart_img.height
-    target_w = W - 120
-    target_h = int(ch * target_w / cw)
-    chart_resized = chart_img.resize((target_w, target_h), Image.LANCZOS)
+    reveal = min(t/(total*0.8), 1.0)
+    cw2    = W-120
+    ch_img = chart_img.resize((cw2, int(chart_img.height*cw2/chart_img.width)), Image.LANCZOS)
+    rw     = max(4, int(cw2*reveal))
+    img.paste(ch_img.crop((0,0,rw,ch_img.height)), (80, cy2+15))
 
-    reveal_w = int(target_w * reveal)
-    if reveal_w > 10:
-        chart_crop = chart_resized.crop((0, 0, reveal_w, target_h))
-        img.paste(chart_crop, (90, chart_card_y + 20))
+    # Stats row appears after chart is 60% drawn
+    if reveal > 0.6:
+        stat_e = ease_out((reveal-0.6)/0.4, 1.0)
+        sy = cy2 + ch2 + 30
 
-    # Stock name + price below chart
-    nf = get_font(48, bold=True)
-    pf = get_font(44)
-    change    = stock_data["change"]
-    chg_color = GREEN if change >= 0 else RED
-    name_str  = stock_data["name"][:20]
-    price_str = f"₹{stock_data['current']:,.2f}  {'▲' if change >= 0 else '▼'}{abs(change):.2f}%"
+        stats = [
+            ("P/E", f"{sd['pe']:.1f}" if sd.get('pe') else "N/A"),
+            ("Mkt Cap", fmt_mcap(sd.get('mcap'))),
+            ("Volume", fmt_vol(sd.get('vol'))),
+            ("EPS", f"₹{sd['eps']:.1f}" if sd.get('eps') else "N/A"),
+        ]
+        box_w = (W-110)//4
+        for i,(label,val) in enumerate(stats):
+            bx = 55 + i*box_w
+            by = int(sy + 60*(1-stat_e))
+            draw.rounded_rectangle([bx+4, by, bx+box_w-8, by+110],
+                                    radius=16, fill=CARD,
+                                    outline=(200,178,240), width=1)
+            draw.text((bx+4+cx(draw,label,get_font(24,True),box_w-12), by+10),
+                      label, font=get_font(24,True), fill=TEXT_LIGHT)
+            draw.text((bx+4+cx(draw,val,get_font(34,True),box_w-12), by+46),
+                      val, font=get_font(34,True), fill=TEXT_DARK)
 
-    draw.text(((W - tw(draw, name_str, nf)) // 2, chart_card_y + chart_card_h + 30),
-              name_str, font=nf, fill=TEXT_DARK)
-    draw.text(((W - tw(draw, price_str, pf)) // 2, chart_card_y + chart_card_h + 92),
-              price_str, font=pf, fill=chg_color)
-
-    return pil_to_np(img)
+    return np.array(img)
 
 
-def frame_headline(t, headline, total=6.0):
-    """16-22s: Headline types in word by word."""
-    img  = Image.fromarray(build_base_frame())
+def f_headline(t, headline, total=5.0):
+    """18-23s: Headline types in fast with word-by-word reveal."""
+    img  = base()
     draw = ImageDraw.Draw(img)
+    brand_bar(draw)
 
-    draw.ellipse([-100, H - 200, 200, H + 100], fill=(220, 200, 255))
-
-    # Brand bar
-    draw.rounded_rectangle([60, 60, W - 60, 200], radius=24, fill=ACCENT)
-    bf = get_font(52, bold=True)
-    hf = get_font(30)
-    draw.text(((W - tw(draw, PAGE_NAME, bf)) // 2, 80),
-              PAGE_NAME, font=bf, fill=WHITE)
-    draw.text(((W - tw(draw, PAGE_HANDLE, hf)) // 2, 148),
-              PAGE_HANDLE, font=hf, fill=ACCENT_LIGHT)
-
-    # "What's the news?" label
     lf = get_font(40, bold=True)
-    label = "What's the news?"
-    draw.text(((W - tw(draw, label, lf)) // 2, 250),
-              label, font=lf, fill=TEXT_MID)
+    draw.text((cx(draw,"Breaking News",lf), 230),
+              "Breaking News", font=lf, fill=ACCENT)
+    # Underline
+    uw = tw(draw,"Breaking News",lf)
+    draw.rectangle([W//2-uw//2, 282, W//2+uw//2, 286], fill=ACCENT)
 
-    # Headline card
-    draw.rounded_rectangle([60, 320, W - 60, H - 200],
-                            radius=28, fill=CARD_BG,
-                            outline=(200, 180, 240), width=2)
-    draw.rounded_rectangle([60, 320, 74, H - 200],
-                            radius=28, fill=ACCENT)
+    draw.rounded_rectangle([55,310,W-55,H-200], radius=28,
+                            fill=CARD, outline=(200,178,240), width=2)
+    draw.rounded_rectangle([55,310,70,H-200], radius=28, fill=ACCENT)
 
-    # Type-in effect
-    words    = headline.split()
-    n_words  = max(1, int(len(words) * min(t / (total * 0.9), 1.0)))
-    visible  = " ".join(words[:n_words])
-    lines    = textwrap.wrap(visible, width=24)
+    words   = headline.split()
+    n       = max(1, int(len(words)*min(t/(total*0.85),1.0)))
+    visible = " ".join(words[:n])
+    lines   = textwrap.wrap(visible, width=22)
 
-    hf2 = get_font(56, bold=True)
-    y   = 380
-    for line in lines[:8]:
-        draw.text(((W - tw(draw, line, hf2)) // 2, y),
-                  line, font=hf2, fill=TEXT_DARK)
-        y += 76
+    hf = get_font(58, bold=True)
+    y  = 370
+    for line in lines[:7]:
+        draw.text((cx(draw,line,hf), y), line, font=hf, fill=TEXT_DARK)
+        y += 74
 
     # Blinking cursor
-    if int(t * 2) % 2 == 0 and n_words < len(words):
-        draw.rectangle([W // 2 - 4, y, W // 2 + 4, y + 56],
-                       fill=ACCENT)
+    if int(t*3)%2==0 and n<len(words):
+        draw.rectangle([W//2-3, y, W//2+3, y+58], fill=ACCENT)
 
-    return pil_to_np(img)
+    return np.array(img)
 
 
-def frame_outro(t, total=3.0):
-    """22-25s: CTA + follow prompt."""
-    progress = min(t / 0.8, 1.0)
-    ease     = 1 - (1 - progress) ** 3
-
-    img  = Image.fromarray(build_base_frame())
+def f_outro(t, total=2.0):
+    """23-25s: Fast CTA snap."""
+    img  = base()
     draw = ImageDraw.Draw(img)
 
-    draw.ellipse([W - 200, -100, W + 100, 200], fill=(200, 180, 245))
-    draw.ellipse([-100, H - 200, 200, H + 100], fill=(220, 200, 255))
+    e = ease_out(t, 0.35)
+    cy3 = int(H+(H*0.28-H)*e)
 
-    # Big brand card
-    card_y = int(H * 0.25)
-    draw.rounded_rectangle([60, card_y, W - 60, card_y + 280],
-                            radius=32, fill=ACCENT)
-    bf2 = get_font(80, bold=True)
-    hf2 = get_font(40)
-    draw.text(((W - tw(draw, PAGE_NAME, bf2)) // 2, card_y + 30),
-              PAGE_NAME, font=bf2, fill=WHITE)
-    draw.text(((W - tw(draw, PAGE_HANDLE, hf2)) // 2, card_y + 130),
-              PAGE_HANDLE, font=hf2, fill=ACCENT_LIGHT)
+    draw.rounded_rectangle([55,cy3,W-55,cy3+300], radius=32, fill=ACCENT)
+    draw.text((cx(draw,PAGE_NAME,get_font(80,True)), cy3+22),
+              PAGE_NAME, font=get_font(80,True), fill=WHITE)
+    draw.text((cx(draw,PAGE_HANDLE,get_font(38)), cy3+120),
+              PAGE_HANDLE, font=get_font(38), fill=ACCENT_LIGHT)
+    draw.text((cx(draw,"Where markets meet technology",get_font(30)), cy3+172),
+              "Where markets meet technology", font=get_font(30), fill=ACCENT_LIGHT)
 
-    tagline = "Where markets meet technology ⚡"
-    tf = get_font(34)
-    draw.text(((W - tw(draw, tagline, tf)) // 2, card_y + 192),
-              tagline, font=tf, fill=ACCENT_LIGHT)
+    cta1 = "Follow for daily"
+    cta2 = "Stock Market Updates"
+    draw.text((cx(draw,cta1,get_font(54,True)), cy3+340),
+              cta1, font=get_font(54,True), fill=TEXT_DARK)
+    draw.text((cx(draw,cta2,get_font(58,True)), cy3+410),
+              cta2, font=get_font(58,True), fill=ACCENT)
 
-    # CTA
-    cta_y = card_y + 340
-    cta1  = "Follow for daily"
-    cta2  = "Stock Market Updates"
-    cf1   = get_font(52, bold=True)
-    cf2   = get_font(56, bold=True)
-    draw.text(((W - tw(draw, cta1, cf1)) // 2, cta_y),
-              cta1, font=cf1, fill=TEXT_DARK)
-    draw.text(((W - tw(draw, cta2, cf2)) // 2, cta_y + 72),
-              cta2, font=cf2, fill=ACCENT)
+    like = "Like  •  Share  •  Save  •  Follow"
+    lf2  = get_font(36)
+    draw.text((cx(draw,like,lf2), cy3+510), like, font=lf2, fill=TEXT_LIGHT)
 
-    # Like + share prompt
-    lf = get_font(40)
-    like = "Like  •  Share  •  Save"
-    draw.text(((W - tw(draw, like, lf)) // 2, cta_y + 180),
-              like, font=lf, fill=TEXT_LIGHT)
-
-    # Bottom bar
-    draw.rounded_rectangle([60, H - 160, W - 60, H - 60],
-                            radius=24, fill=ACCENT)
-    bf3 = get_font(38, bold=True)
+    draw.rounded_rectangle([55,H-130,W-55,H-40], radius=22, fill=ACCENT)
     tag = "stockdev.in  |  Daily Market Intelligence"
-    draw.text(((W - tw(draw, tag, bf3)) // 2, H - 130),
-              tag, font=bf3, fill=WHITE)
+    draw.text((cx(draw,tag,get_font(34,True)), H-112),
+              tag, font=get_font(34,True), fill=WHITE)
 
-    return pil_to_np(img)
+    return np.array(img)
 
-
-# ── Main reel builder ──────────────────────────────────────────
+# ── Main ───────────────────────────────────────────────────────
 def create_reel(article, output_path):
     title = re.sub(r"[^\x00-\x7F]+", "", article["title"]).strip()
-    print(f"  Creating reel for: {title[:60]}")
+    print(f"  Creating reel: {title[:65]}")
 
-    # Detect stock ticker
-    ticker     = detect_ticker(title)
-    stock_data = fetch_stock_data(ticker) if ticker else fetch_nifty_data()
+    ticker = detect_ticker(title)
+    sd     = fetch_stock(ticker) if ticker else fetch_nifty()
+    if not sd:
+        print("  [!] Falling back to Nifty data")
+        sd = dict(name="NIFTY 50", ticker="NIFTY", current=24500.0,
+                  prev=24300.0, change=0.82, hi52=26277.0, lo52=21964.0,
+                  pe=None, mcap=None, vol=None, eps=None,
+                  history=[24000+i*25 for i in range(30)])
 
-    if not stock_data:
-        print("  [!] Could not fetch stock data, using Nifty fallback")
-        stock_data = {
-            "name": "NIFTY 50", "ticker": "NIFTY",
-            "current": 24500.0, "change": 0.5,
-            "history": [24000 + i * 25 for i in range(20)]
-        }
+    print(f"  {sd['name']} | ₹{sd['current']:,.2f} | {sd['change']:+.2f}%")
+    chart_img = make_chart(sd["history"], sd["change"])
+    question  = hook_question(title)
 
-    print(f"  Stock: {stock_data['name']} | ₹{stock_data['current']:,.2f} | {stock_data['change']:+.2f}%")
+    def make_clip(fn, dur, **kw):
+        return VideoClip(lambda t: fn(t, **kw).astype(np.uint8),
+                         duration=dur).with_fps(FPS)
 
-    # Generate chart
-    chart_img = make_chart_image(stock_data["history"], stock_data["change"])
+    print("  Rendering sections...")
+    clips = [
+        make_clip(f_hook,     2.0,  question=question),
+        make_clip(f_stock,    3.0,  sd=sd),
+        make_clip(f_chart,    8.0,  sd=sd, chart_img=chart_img),
+        make_clip(f_headline, 5.0,  headline=title),
+        make_clip(f_outro,    2.0),
+    ]
 
-    # Build video clips
+    video = concatenate_videoclips(clips)
 
-    def make_clip(frame_fn, duration, **kwargs):
-        from moviepy import VideoClip
-        def make_frame(t):
-            return frame_fn(t, **kwargs).astype(np.uint8)
-        return VideoClip(make_frame, duration=duration).with_fps(FPS)
-
-    print("  Rendering intro...")
-    c1 = make_clip(frame_intro, 3.0)
-
-    print("  Rendering stock info...")
-    c2 = make_clip(frame_stock_info, 5.0, stock_data=stock_data)
-
-    print("  Rendering chart...")
-    c3 = make_clip(frame_chart, 8.0, stock_data=stock_data, chart_img=chart_img)
-
-    print("  Rendering headline...")
-    c4 = make_clip(frame_headline, 6.0, headline=title)
-
-    print("  Rendering outro...")
-    c5 = make_clip(frame_outro, 3.0)
-
-    video = concatenate_videoclips([c1, c2, c3, c4, c5])
-
-    # Add music
-    music_files = [
-        f for f in os.listdir(MUSIC_DIR)
-        if f.endswith(".mp3") or f.endswith(".wav")
-    ] if os.path.exists(MUSIC_DIR) else []
-
+    # Music
+    music_files = [f for f in os.listdir(MUSIC_DIR)
+                   if f.endswith((".mp3",".wav"))] if os.path.exists(MUSIC_DIR) else []
     if music_files:
-        music_path = os.path.join(MUSIC_DIR, random.choice(music_files))
         try:
-            audio = AudioFileClip(music_path).with_subclip(0, DURATION).audio_fadeout(2)
+            audio = AudioFileClip(os.path.join(MUSIC_DIR, random.choice(music_files)))
+            audio = audio.with_subclip(0, min(DURATION, audio.duration)).audio_fadeout(2)
             video = video.with_audio(audio)
-            print(f"  Music: {os.path.basename(music_path)}")
+            print(f"  Music added")
         except Exception as e:
-            print(f"  [!] Music failed: {e}")
+            print(f"  [!] Music error: {e}")
     else:
-        print("  [!] No music files found in music/ folder")
+        print("  [!] No music files — add MP3s to stock-news-bot/music/")
 
-    # Write video
     print("  Writing video...")
-    video.write_videofile(
-        output_path,
-        fps=FPS,
-        codec="libx264",
-        audio_codec="aac",
-        temp_audiofile="temp_audio.m4a",
-        remove_temp=True,
-        logger=None,
-        preset="ultrafast",
-    )
+    video.write_videofile(output_path, fps=FPS, codec="libx264",
+                          audio_codec="aac", temp_audiofile="temp_audio.m4a",
+                          remove_temp=True, logger=None, preset="ultrafast")
     print(f"  [✓] Reel saved -> {output_path}")
