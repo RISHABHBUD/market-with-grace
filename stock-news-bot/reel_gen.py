@@ -210,22 +210,27 @@ def f_hook(t, question):
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
         draw = ImageDraw.Draw(img)
 
-    f1 = get_font(int(88*e), bold=True)
-    f2 = get_font(int(72*e), bold=True)
-    fonts = [f1, f2] if len(lines) > 1 else [f1]
+    # Auto-fit font size so text never overflows W-120 margin
+    max_w = W - 120
+    for fsize in [88, 76, 64, 54, 46]:
+        f1 = get_font(int(fsize*e), bold=True)
+        f2 = get_font(int((fsize-14)*e), bold=True)
+        fonts = [f1, f2] if len(lines) > 1 else [f1]
+        if all(tw(draw, line, fonts[min(i,len(fonts)-1)]) <= max_w
+               for i, line in enumerate(lines[:2])):
+            break
 
     total_h = sum(f.size+16 for f in fonts[:len(lines)])
     y = H//2 - total_h//2 - 80
 
     for i, line in enumerate(lines[:2]):
         f = fonts[min(i, len(fonts)-1)]
-        # Shadow
         draw.text((cx(draw,line,f)+3, y+3), line, font=f, fill=(180,150,220))
         draw.text((cx(draw,line,f), y), line, font=f, fill=TEXT_DARK)
         y += f.size + 16
 
     # "STOCK SPOTLIGHT" tag at bottom
-    tag = "✦  STOCK SPOTLIGHT  ✦"
+    tag = "STOCK SPOTLIGHT"
     tf  = get_font(36, bold=True)
     draw.rounded_rectangle([cx(draw,tag,tf)-24, H-320,
                              cx(draw,tag,tf)+tw(draw,tag,tf)+24, H-260],
@@ -235,8 +240,40 @@ def f_hook(t, question):
     return np.array(img)
 
 
+def fetch_logo(ticker_ns):
+    """Fetch company logo from Logo.dev (free, no API key needed)."""
+    import requests
+    # Map NSE ticker to company domain
+    DOMAINS = {
+        "TATASTEEL.NS":"tatasteel.com","TATAPOWER.NS":"tatapower.com",
+        "TATAMOTORS.NS":"tatamotors.com","RELIANCE.NS":"ril.com",
+        "INFY.NS":"infosys.com","HDFCBANK.NS":"hdfcbank.com",
+        "ICICIBANK.NS":"icicibank.com","WIPRO.NS":"wipro.com",
+        "TCS.NS":"tcs.com","BAJFINANCE.NS":"bajajfinserv.in",
+        "ADANIENT.NS":"adani.com","NESTLEIND.NS":"nestle.in",
+        "HCLTECH.NS":"hcltech.com","AXISBANK.NS":"axisbank.com",
+        "KOTAKBANK.NS":"kotak.com","SBIN.NS":"sbi.co.in",
+        "MARUTI.NS":"marutisuzuki.com","ZOMATO.NS":"zomato.com",
+        "VEDL.NS":"vedantalimited.com","TRENT.NS":"trent.in",
+        "SUZLON.NS":"suzlon.com","OLAELEC.NS":"olaelectric.com",
+    }
+    domain = DOMAINS.get(ticker_ns)
+    if not domain:
+        return None
+    try:
+        url  = f"https://img.logo.dev/{domain}?token=pk_free&size=200&format=png"
+        resp = requests.get(url, timeout=8)
+        if resp.status_code == 200 and len(resp.content) > 500:
+            from io import BytesIO
+            logo = Image.open(BytesIO(resp.content)).convert("RGBA")
+            return logo
+    except Exception as e:
+        print(f"  [!] Logo fetch failed: {e}")
+    return None
+
+
 def f_stock(t, sd):
-    """2-5s: Stock card snaps in fast, price counts up."""
+    """2-4s: Stock card snaps in fast, price counts up."""
     img  = base()
     draw = ImageDraw.Draw(img)
     brand_bar(draw)
@@ -307,8 +344,8 @@ def f_stock(t, sd):
 
     return np.array(img)
 
-def f_chart(t, sd, chart_img, total=8.0):
-    """5-13s: Chart draws itself, stats appear below."""
+def f_chart(t, sd, chart_img, logo_img=None, total=8.0):
+    """5-12s: Chart draws itself, stats + logo appear below."""
     img  = base()
     draw = ImageDraw.Draw(img)
     brand_bar(draw)
@@ -317,32 +354,31 @@ def f_chart(t, sd, chart_img, total=8.0):
     draw.text((cx(draw,"30-Day Price Chart",lf), 225),
               "30-Day Price Chart", font=lf, fill=TEXT_MID)
 
-    # Chart card
-    cy2, ch2 = 285, 500
+    # Chart card — taller to fill space
+    cy2, ch2 = 285, 480
     draw.rounded_rectangle([55, cy2, W-55, cy2+ch2], radius=24,
                             fill=CARD, outline=(200,178,240), width=2)
 
-    reveal = min(t/(total*0.8), 1.0)
+    reveal = min(t/(total*0.75), 1.0)
     cw2    = W-120
     ch_img = chart_img.resize((cw2, int(chart_img.height*cw2/chart_img.width)), Image.LANCZOS)
     rw     = max(4, int(cw2*reveal))
     img.paste(ch_img.crop((0,0,rw,ch_img.height)), (80, cy2+15))
 
-    # Stats row appears after chart is 60% drawn
-    if reveal > 0.6:
-        stat_e = ease_out((reveal-0.6)/0.4, 1.0)
-        sy = cy2 + ch2 + 30
-
+    # Stats row appears after chart is 55% drawn
+    stat_y = cy2 + ch2 + 24
+    if reveal > 0.55:
+        stat_e = ease_out((reveal-0.55)/0.45, 1.0)
         stats = [
-            ("P/E", f"{sd['pe']:.1f}" if sd.get('pe') else "N/A"),
+            ("P/E",     f"{sd['pe']:.1f}"  if sd.get('pe')  else "N/A"),
             ("Mkt Cap", fmt_mcap(sd.get('mcap'))),
-            ("Volume", fmt_vol(sd.get('vol'))),
-            ("EPS", f"₹{sd['eps']:.1f}" if sd.get('eps') else "N/A"),
+            ("Volume",  fmt_vol(sd.get('vol'))),
+            ("EPS",     f"₹{sd['eps']:.1f}" if sd.get('eps') else "N/A"),
         ]
         box_w = (W-110)//4
         for i,(label,val) in enumerate(stats):
             bx = 55 + i*box_w
-            by = int(sy + 60*(1-stat_e))
+            by = int(stat_y + 50*(1-stat_e))
             draw.rounded_rectangle([bx+4, by, bx+box_w-8, by+110],
                                     radius=16, fill=CARD,
                                     outline=(200,178,240), width=1)
@@ -350,6 +386,41 @@ def f_chart(t, sd, chart_img, total=8.0):
                       label, font=get_font(24,True), fill=TEXT_LIGHT)
             draw.text((bx+4+cx(draw,val,get_font(34,True),box_w-12), by+46),
                       val, font=get_font(34,True), fill=TEXT_DARK)
+
+    # Logo + company name card below stats — fills remaining space nicely
+    logo_y = stat_y + 130
+    logo_card_h = H - logo_y - 60
+    if logo_card_h > 120:
+        draw.rounded_rectangle([55, logo_y, W-55, logo_y+logo_card_h],
+                                radius=24, fill=CARD, outline=(200,178,240), width=1)
+
+        if logo_img and reveal > 0.7:
+            logo_e = ease_out((reveal-0.7)/0.3, 1.0)
+            # Paste logo centered, max 200px tall
+            lh = min(180, logo_card_h - 80)
+            lw = int(logo_img.width * lh / logo_img.height)
+            lw = min(lw, W-200)
+            logo_resized = logo_img.resize((lw, lh), Image.LANCZOS)
+            lx = (W - lw) // 2
+            ly = logo_y + (logo_card_h - lh - 60) // 2
+            # Paste with alpha
+            if logo_resized.mode == "RGBA":
+                img.paste(logo_resized, (lx, ly), logo_resized)
+            else:
+                img.paste(logo_resized, (lx, ly))
+            draw = ImageDraw.Draw(img)
+            # Company name below logo
+            name_f = get_font(40, bold=True)
+            draw.text((cx(draw, sd["name"][:24], name_f), logo_y+logo_card_h-70),
+                      sd["name"][:24], font=name_f, fill=TEXT_DARK)
+        else:
+            # No logo — show stock name + sector nicely
+            nf2 = get_font(52, bold=True)
+            tf3 = get_font(34)
+            draw.text((cx(draw, sd["name"][:20], nf2), logo_y+logo_card_h//2-50),
+                      sd["name"][:20], font=nf2, fill=TEXT_DARK)
+            draw.text((cx(draw, sd["ticker"], tf3), logo_y+logo_card_h//2+20),
+                      sd["ticker"], font=tf3, fill=TEXT_LIGHT)
 
     return np.array(img)
 
@@ -441,6 +512,16 @@ def create_reel(article, output_path):
     chart_img = make_chart(sd["history"], sd["change"])
     question  = hook_question(title)
 
+    # Fetch company logo
+    logo_img = None
+    if ticker:
+        print("  Fetching company logo...")
+        logo_img = fetch_logo(ticker)
+        if logo_img:
+            print("  [✓] Logo fetched")
+        else:
+            print("  [!] No logo found, using text fallback")
+
     def make_clip(fn, dur, **kw):
         return VideoClip(lambda t: fn(t, **kw).astype(np.uint8),
                          duration=dur).with_fps(FPS)
@@ -448,8 +529,8 @@ def create_reel(article, output_path):
     print("  Rendering sections...")
     clips = [
         make_clip(f_hook,     2.0,  question=question),
-        make_clip(f_stock,    3.0,  sd=sd),
-        make_clip(f_chart,    8.0,  sd=sd, chart_img=chart_img),
+        make_clip(f_stock,    2.0,  sd=sd),                          # 2s only
+        make_clip(f_chart,    8.0,  sd=sd, chart_img=chart_img, logo_img=logo_img),
         make_clip(f_headline, 5.0,  headline=title),
         make_clip(f_outro,    2.0),
     ]
