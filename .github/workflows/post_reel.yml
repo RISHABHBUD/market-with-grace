@@ -1,0 +1,51 @@
+name: StockDev.in - Auto Reel
+
+on:
+  # Triggered by cron-job.org twice daily via API dispatch
+  # Recommended times: 12:00 PM IST and 6:00 PM IST
+  workflow_dispatch:
+
+jobs:
+  reel:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Install Python dependencies
+        run: pip install -r stock-news-bot/requirements-reel.txt
+
+      - name: Generate and post reel
+        env:
+          CLOUDINARY_CLOUD_NAME:  ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY:     ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET:  ${{ secrets.CLOUDINARY_API_SECRET }}
+          INSTAGRAM_USER_ID:      ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: |
+          cd stock-news-bot
+          python run_reel.py
+
+      - name: Commit reel and tracker
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add stock-news-bot/posted.json stock-news-bot/posts/reels/
+          git diff --staged --quiet || git commit -m "auto: reel $(date +'%Y-%m-%d %H:%M IST')"
+          git push

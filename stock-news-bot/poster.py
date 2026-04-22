@@ -75,3 +75,43 @@ def post_to_instagram(image_url, caption):
     post_id = resp.json()["id"]
     print(f"  [✓] Published to Instagram! Post ID: {post_id}")
     return post_id
+
+
+def post_reel_to_instagram(video_url, caption):
+    """Publish a Reel to Instagram via Graph API."""
+    ig_user_id   = os.environ["INSTAGRAM_USER_ID"]
+    access_token = os.environ["INSTAGRAM_ACCESS_TOKEN"]
+
+    base = f"https://graph.facebook.com/v19.0/{ig_user_id}"
+
+    # Step 1: Create reel container
+    resp = requests.post(f"{base}/media", data={
+        "media_type":  "REELS",
+        "video_url":   video_url,
+        "caption":     caption,
+        "share_to_feed": "true",
+        "access_token": access_token,
+    })
+    print(f"  Reel container status: {resp.status_code}", flush=True)
+    print(f"  Reel container response: {resp.text}", flush=True)
+    if not resp.ok:
+        raise Exception(f"Reel container creation failed: {resp.text}")
+    container_id = resp.json()["id"]
+    print(f"  [✓] Reel container created: {container_id}")
+
+    # Step 2: Wait for video processing (reels need more time than images)
+    print("  Waiting for video to process...")
+    time.sleep(30)
+
+    # Step 3: Publish
+    resp = requests.post(f"{base}/media_publish", data={
+        "creation_id":  container_id,
+        "access_token": access_token,
+    })
+    print(f"  Reel publish status: {resp.status_code}", flush=True)
+    print(f"  Reel publish response: {resp.text}", flush=True)
+    if not resp.ok:
+        raise Exception(f"Reel publish failed: {resp.text}")
+    post_id = resp.json()["id"]
+    print(f"  [✓] Reel published! Post ID: {post_id}")
+    return post_id
