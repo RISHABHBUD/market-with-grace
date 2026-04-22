@@ -1,10 +1,7 @@
 name: StockDev.in - Auto Post
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
-
-  # Also allow manual trigger from GitHub UI
+  # Triggered externally by cron-job.org every hour via API dispatch
   workflow_dispatch:
 
 jobs:
