@@ -122,23 +122,45 @@ def extract_candidates(title):
     return candidates[:12]  # limit API calls
 
 
+# General market titles — skip stock search, go straight to Market Pulse
+MARKET_GENERAL_TERMS = {
+    "nifty 50","nifty50","sensex","nifty bank","bank nifty",
+    "stock market","share market","market crash","market rally",
+    "market today","market update","market live","market falls",
+    "market rises","market gains","market drops","bull run","bear market",
+    "market breadth","india vix","vix","advance decline","fii","dii",
+    "foreign investor","domestic investor","market outlook","market analysis",
+    "market wrap","closing bell","opening bell","pre market","post market",
+    "global market","us market","wall street","dow jones","nasdaq",
+    "market holiday","trading halt","circuit breaker","upper circuit","lower circuit",
+}
+
+def is_general_market_title(title):
+    t = title.lower()
+    return any(term in t for term in MARKET_GENERAL_TERMS)
+
+
 def detect_ticker_dynamic(title):
     """Search Yahoo Finance dynamically for any Indian stock."""
+    # Skip if it's a general market article
+    if is_general_market_title(title):
+        print("  General market title detected — skipping stock search")
+        return None
+
     candidates = extract_candidates(title)
     print(f"  Searching tickers for candidates: {candidates[:5]}")
 
     for candidate in candidates:
         try:
-            results = yf.Search(candidate, max_results=5).quotes
+            results = yf.Search(candidate, max_results=8).quotes
             for r in results:
-                sym = r.get("symbol", "")
-                exch = r.get("exchange", "")
+                sym   = r.get("symbol", "")
                 qtype = r.get("quoteType", "")
-                # Only NSE/BSE equities
+                # Only NSE/BSE EQUITY — strictly no ETF, MF, INDEX
                 if (sym.endswith(".NS") or sym.endswith(".BO")) and qtype == "EQUITY":
                     print(f"  Found: {sym} for '{candidate}'")
                     return sym
-        except Exception as e:
+        except Exception:
             continue
     return None
 
@@ -447,8 +469,8 @@ def f_stock(t, sd):
 
     return np.array(img)
 
-def f_chart(t, sd, chart_img, logo_img=None, total=8.0):
-    """5-12s: Chart draws itself, stats + logo appear below."""
+def f_chart(t, sd, chart_img, total=8.0):
+    """5-12s: Chart draws itself, then 6-stat grid fills below."""
     img  = base()
     draw = ImageDraw.Draw(img)
     brand_bar(draw)
@@ -457,69 +479,84 @@ def f_chart(t, sd, chart_img, logo_img=None, total=8.0):
     draw.text((cx(draw,"30-Day Price Chart",lf), 225),
               "30-Day Price Chart", font=lf, fill=TEXT_MID)
 
-    # Chart card — taller to fill space
-    cy2, ch2 = 285, 480
+    # Chart card
+    cy2, ch2 = 285, 440
     draw.rounded_rectangle([55, cy2, W-55, cy2+ch2], radius=24,
                             fill=CARD, outline=(200,178,240), width=2)
 
-    reveal = min(t/(total*0.75), 1.0)
-    cw2    = W-120
+    reveal = min(t/(total*0.7), 1.0)
+    cw2    = W - 120
     ch_img = chart_img.resize((cw2, int(chart_img.height*cw2/chart_img.width)), Image.LANCZOS)
     rw     = max(4, int(cw2*reveal))
-    img.paste(ch_img.crop((0,0,rw,ch_img.height)), (80, cy2+15))
+    img.paste(ch_img.crop((0, 0, rw, ch_img.height)), (80, cy2+15))
 
-    # Stats row appears after chart is 55% drawn
-    stat_y = cy2 + ch2 + 24
-    if reveal > 0.55:
-        stat_e = ease_out((reveal-0.55)/0.45, 1.0)
+    # 6-stat grid — 2 rows × 3 cols — slides up after chart 50% drawn
+    if reveal > 0.5:
+        stat_e = ease_out((reveal-0.5)/0.5, 1.0)
+        chg_col = GREEN if sd["change"] >= 0 else RED
+
         stats = [
-            ("P/E",     f"{sd['pe']:.1f}"  if sd.get('pe')  else "N/A"),
-            ("Mkt Cap", fmt_mcap(sd.get('mcap'))),
-            ("Volume",  fmt_vol(sd.get('vol'))),
-            ("EPS",     f"₹{sd['eps']:.1f}" if sd.get('eps') else "N/A"),
+            ("P/E Ratio",  f"{sd['pe']:.1f}"    if sd.get('pe')   else "N/A",  None),
+            ("Market Cap", fmt_mcap(sd.get('mcap')),                            None),
+            ("EPS",        f"Rs{sd['eps']:.1f}"  if sd.get('eps')  else "N/A",  None),
+            ("52W High",   f"Rs{sd['hi52']:,.0f}" if sd.get('hi52') else "N/A", GREEN),
+            ("52W Low",    f"Rs{sd['lo52']:,.0f}" if sd.get('lo52') else "N/A", RED),
+            ("Volume",     fmt_vol(sd.get('vol')),                              None),
         ]
-        box_w = (W-110)//4
-        for i,(label,val) in enumerate(stats):
-            bx = 55 + i*box_w
-            by = int(stat_y + 50*(1-stat_e))
-            draw.rounded_rectangle([bx+4, by, bx+box_w-8, by+110],
-                                    radius=16, fill=CARD,
+
+        cols    = 3
+        rows    = 2
+        pad     = 12
+        box_w   = (W - 55*2 - pad*(cols-1)) // cols
+        box_h   = 130
+        grid_y  = cy2 + ch2 + 20
+
+        for idx, (label, val, val_color) in enumerate(stats):
+            row = idx // cols
+            col = idx % cols
+            bx  = 55 + col*(box_w+pad)
+            by  = int(grid_y + row*(box_h+pad) + 40*(1-stat_e))
+
+            # Card with subtle accent top strip
+            draw.rounded_rectangle([bx, by, bx+box_w, by+box_h],
+                                    radius=18, fill=CARD,
                                     outline=(200,178,240), width=1)
-            draw.text((bx+4+cx(draw,label,get_font(24,True),box_w-12), by+10),
-                      label, font=get_font(24,True), fill=TEXT_LIGHT)
-            draw.text((bx+4+cx(draw,val,get_font(34,True),box_w-12), by+46),
-                      val, font=get_font(34,True), fill=TEXT_DARK)
+            draw.rounded_rectangle([bx, by, bx+box_w, by+6],
+                                    radius=18, fill=ACCENT_LIGHT)
 
-    # Logo + company name card below stats — fills remaining space nicely
-    logo_y = stat_y + 130
-    logo_card_h = H - logo_y - 60
-    if logo_card_h > 120:
-        draw.rounded_rectangle([55, logo_y, W-55, logo_y+logo_card_h],
-                                radius=24, fill=CARD, outline=(200,178,240), width=1)
+            # Label
+            lbl_f = get_font(22, bold=True)
+            draw.text((bx + (box_w-tw(draw,label,lbl_f))//2, by+14),
+                      label, font=lbl_f, fill=TEXT_LIGHT)
 
-        if logo_img and reveal > 0.7:
-            logo_e = ease_out((reveal-0.7)/0.3, 1.0)
-            lh = min(220, logo_card_h - 80)
-            lw = lh  # avatar is square
-            logo_resized = logo_img.resize((lw, lh), Image.LANCZOS)
-            lx = (W - lw) // 2
-            ly = logo_y + (logo_card_h - lh - 50) // 2
-            # Always paste with alpha mask
-            img.paste(logo_resized.convert("RGB"),
-                      (lx, ly),
-                      logo_resized.split()[3] if logo_resized.mode == "RGBA" else None)
-            draw = ImageDraw.Draw(img)
-            name_f = get_font(38, bold=True)
-            draw.text((cx(draw, sd["name"][:24], name_f), logo_y+logo_card_h-65),
-                      sd["name"][:24], font=name_f, fill=TEXT_DARK)
-        else:
-            # No logo — show stock name + sector nicely
-            nf2 = get_font(52, bold=True)
-            tf3 = get_font(34)
-            draw.text((cx(draw, sd["name"][:20], nf2), logo_y+logo_card_h//2-50),
-                      sd["name"][:20], font=nf2, fill=TEXT_DARK)
-            draw.text((cx(draw, sd["ticker"], tf3), logo_y+logo_card_h//2+20),
-                      sd["ticker"], font=tf3, fill=TEXT_LIGHT)
+            # Value — auto-size to fit
+            for vsize in [38, 32, 26]:
+                vf = get_font(vsize, bold=True)
+                if tw(draw, val, vf) <= box_w - 16:
+                    break
+            vc = val_color if val_color else TEXT_DARK
+            draw.text((bx + (box_w-tw(draw,val,vf))//2, by+50),
+                      val, font=vf, fill=vc)
+
+        # 52W range bar spanning full width below grid
+        bar_y = grid_y + rows*(box_h+pad) + 16
+        if sd.get('hi52') and sd.get('lo52') and sd['hi52'] > sd['lo52']:
+            bar_x1, bar_x2 = 55, W-55
+            bar_w2 = bar_x2 - bar_x1
+            draw.rounded_rectangle([bar_x1, bar_y, bar_x2, bar_y+16],
+                                    radius=8, fill=ACCENT_LIGHT)
+            pos    = (sd["current"]-sd["lo52"])/(sd["hi52"]-sd["lo52"])
+            pos    = max(0.02, min(0.98, pos))
+            fill_w = int(bar_w2 * pos * min((reveal-0.5)/0.5, 1.0))
+            if fill_w > 0:
+                draw.rounded_rectangle([bar_x1, bar_y, bar_x1+fill_w, bar_y+16],
+                                        radius=8, fill=chg_col)
+            dot_x = bar_x1 + fill_w
+            draw.ellipse([dot_x-12, bar_y-8, dot_x+12, bar_y+24], fill=chg_col)
+            # Labels
+            draw.text((bar_x1, bar_y+24), f"52W L", font=get_font(22), fill=RED)
+            draw.text((bar_x2-tw(draw,"52W H",get_font(22)), bar_y+24),
+                      "52W H", font=get_font(22), fill=GREEN)
 
     return np.array(img)
 
@@ -680,13 +717,11 @@ def create_reel(article, output_path):
 
     if is_stock_reel:
         print(f"  {sd['name']} | Rs{sd['current']:,.2f} | {sd['change']:+.2f}%")
-        logo_img = make_company_avatar(sd)
-        print("  [✓] Company avatar generated")
 
         clips = [
             make_clip(f_hook,     2.0, question=question),
             make_clip(f_stock,    2.0, sd=sd),
-            make_clip(f_chart,    8.0, sd=sd, chart_img=chart_img, logo_img=logo_img),
+            make_clip(f_chart,    8.0, sd=sd, chart_img=chart_img),
             make_clip(f_headline, 5.0, headline=title),
             make_clip(f_outro,    2.0),
         ]
