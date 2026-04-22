@@ -99,9 +99,24 @@ def post_reel_to_instagram(video_url, caption):
     container_id = resp.json()["id"]
     print(f"  [✓] Reel container created: {container_id}")
 
-    # Step 2: Wait for video processing (reels need more time than images)
+    # Step 2: Poll until video is ready (can take 30-120s for reels)
     print("  Waiting for video to process...")
-    time.sleep(30)
+    import time as _time
+    for attempt in range(24):  # max 2 minutes
+        _time.sleep(10)
+        status_resp = requests.get(
+            f"https://graph.facebook.com/v19.0/{container_id}",
+            params={"fields": "status_code", "access_token": access_token}
+        )
+        status_data = status_resp.json()
+        status_code = status_data.get("status_code", "")
+        print(f"  Status check {attempt+1}: {status_code}")
+        if status_code == "FINISHED":
+            break
+        if status_code == "ERROR":
+            raise Exception(f"Instagram video processing failed: {status_data}")
+    else:
+        print("  [!] Timed out waiting — attempting publish anyway")
 
     # Step 3: Publish
     resp = requests.post(f"{base}/media_publish", data={
