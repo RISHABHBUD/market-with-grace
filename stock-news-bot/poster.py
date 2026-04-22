@@ -61,6 +61,9 @@ def post_to_instagram(image_url, caption):
     container_id = resp.json()["id"]
     print(f"  [✓] Media container created: {container_id}")
 
+    # Wait for Instagram to process the image
+    time.sleep(8)
+
     # Step 2: Publish the container
     resp = requests.post(f"{base}/media_publish", data={
         "creation_id":  container_id,
