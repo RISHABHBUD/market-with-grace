@@ -83,7 +83,8 @@ def upload_video_to_cloudinary(video_path):
     api_secret = os.environ["CLOUDINARY_API_SECRET"]
 
     timestamp  = str(int(time.time()))
-    sig_str    = f"resource_type=video&timestamp={timestamp}{api_secret}"
+    # Only timestamp goes into signature for basic upload
+    sig_str    = f"timestamp={timestamp}{api_secret}"
     signature  = hashlib.sha1(sig_str.encode()).hexdigest()
 
     url = f"https://api.cloudinary.com/v1_1/{cloud_name}/video/upload"
