@@ -85,23 +85,89 @@ def brand_bar(draw, y=55, h=145):
               PAGE_HANDLE, font=get_font(32), fill=ACCENT_LIGHT)
 
 # ── Stock data ─────────────────────────────────────────────────
-TICKERS = {
-    "tata steel":"TATASTEEL.NS","tata power":"TATAPOWER.NS",
-    "tata motors":"TATAMOTORS.NS","reliance":"RELIANCE.NS",
-    "infosys":"INFY.NS","hdfc bank":"HDFCBANK.NS",
-    "icici bank":"ICICIBANK.NS","wipro":"WIPRO.NS","tcs":"TCS.NS",
-    "bajaj":"BAJFINANCE.NS","adani":"ADANIENT.NS","nestle":"NESTLEIND.NS",
-    "hcl":"HCLTECH.NS","axis bank":"AXISBANK.NS","kotak":"KOTAKBANK.NS",
-    "sbi":"SBIN.NS","maruti":"MARUTI.NS","zomato":"ZOMATO.NS",
-    "vedanta":"VEDL.NS","trent":"TRENT.NS","suzlon":"SUZLON.NS",
-    "ola":"OLAELEC.NS","paytm":"PAYTM.NS","groww":"GROWW.NS",
+
+# ── Dynamic stock detection ────────────────────────────────────
+# Words to strip from title before searching
+SKIP_WORDS = {
+    "share","price","stock","shares","today","nse","bse","market",
+    "india","indian","quarter","results","q4","q3","q2","q1","fy",
+    "profit","loss","revenue","dividend","bonus","target","buy","sell",
+    "hold","rating","analyst","report","jumps","surges","falls","drops",
+    "rises","gains","rallies","crashes","hits","high","low","week","year",
+    "52","percent","%","rs","crore","lakh","billion","million","the","a",
+    "an","in","on","at","of","for","to","and","or","is","are","was","were",
+    "its","this","that","with","from","after","before","as","by","how",
+    "why","what","which","who","should","will","can","may","might","here",
+    "new","latest","top","best","big","strong","weak","record","all","time",
+    "set","board","meeting","date","declare","allotment","check","status",
+    "online","ipo","listing","debut","trading","session","day","week",
+    "month","april","march","february","january","2026","2025","2024",
 }
 
-def detect_ticker(title):
-    t = title.lower()
-    for k,v in TICKERS.items():
-        if k in t: return v
+def extract_candidates(title):
+    """Extract potential company name candidates from title."""
+    # Clean title
+    clean = re.sub(r"[^\w\s]", " ", title)
+    words = [w for w in clean.split() if len(w) > 2
+             and w.lower() not in SKIP_WORDS
+             and not w.isdigit()]
+
+    candidates = []
+    # Try 3-word, 2-word, 1-word combinations from the start
+    for size in [4, 3, 2, 1]:
+        for i in range(len(words) - size + 1):
+            phrase = " ".join(words[i:i+size])
+            if phrase not in candidates:
+                candidates.append(phrase)
+    return candidates[:12]  # limit API calls
+
+
+def detect_ticker_dynamic(title):
+    """Search Yahoo Finance dynamically for any Indian stock."""
+    candidates = extract_candidates(title)
+    print(f"  Searching tickers for candidates: {candidates[:5]}")
+
+    for candidate in candidates:
+        try:
+            results = yf.Search(candidate, max_results=5).quotes
+            for r in results:
+                sym = r.get("symbol", "")
+                exch = r.get("exchange", "")
+                qtype = r.get("quoteType", "")
+                # Only NSE/BSE equities
+                if (sym.endswith(".NS") or sym.endswith(".BO")) and qtype == "EQUITY":
+                    print(f"  Found: {sym} for '{candidate}'")
+                    return sym
+        except Exception as e:
+            continue
     return None
+
+
+def fetch_top_movers():
+    """Fetch top 3 Nifty gainers and losers for Market Pulse reel."""
+    nifty50 = [
+        "RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS","ICICIBANK.NS",
+        "HINDUNILVR.NS","ITC.NS","SBIN.NS","BHARTIARTL.NS","KOTAKBANK.NS",
+        "LT.NS","AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS","TITAN.NS",
+        "BAJFINANCE.NS","WIPRO.NS","HCLTECH.NS","ULTRACEMCO.NS","NESTLEIND.NS",
+    ]
+    movers = []
+    for sym in nifty50[:15]:  # check top 15 for speed
+        try:
+            t    = yf.Ticker(sym)
+            hist = t.history(period="2d")
+            if len(hist) < 2: continue
+            cur  = hist["Close"].iloc[-1]
+            prev = hist["Close"].iloc[-2]
+            chg  = (cur - prev) / prev * 100
+            name = sym.replace(".NS","")
+            movers.append(dict(name=name, change=chg, price=cur))
+        except:
+            continue
+    movers.sort(key=lambda x: x["change"], reverse=True)
+    gainers = movers[:3]
+    losers  = movers[-3:][::-1]
+    return gainers, losers
 
 def fetch_stock(ticker):
     try:
@@ -494,46 +560,121 @@ def f_outro(t, total=2.0):
 
     return np.array(img)
 
+def f_market_pulse(t, nifty, gainers, losers, chart_img, total=8.0):
+    """Fallback reel frame — Market Pulse with Nifty + top movers."""
+    img  = base()
+    draw = ImageDraw.Draw(img)
+    brand_bar(draw)
+
+    e = ease_out(t, 0.5)
+
+    # Title
+    lf = get_font(44, bold=True)
+    draw.text((cx(draw,"Market Pulse",lf), 225), "Market Pulse",
+              font=lf, fill=ACCENT)
+    draw.text((cx(draw,"Today's Top Movers",get_font(32)), 282),
+              "Today's Top Movers", font=get_font(32), fill=TEXT_LIGHT)
+
+    # Nifty summary bar
+    chg_col = GREEN if nifty["change"] >= 0 else RED
+    arrow   = "▲" if nifty["change"] >= 0 else "▼"
+    nbar    = f"NIFTY 50   ₹{nifty['current']:,.0f}   {arrow}{abs(nifty['change']):.2f}%"
+    nf2     = get_font(38, bold=True)
+    nw      = tw(draw, nbar, nf2) + 60
+    draw.rounded_rectangle([W//2-nw//2, 330, W//2+nw//2, 390],
+                            radius=22, fill=chg_col)
+    draw.text((W//2-nw//2+30, 336), nbar, font=nf2, fill=WHITE)
+
+    # Mini chart
+    cy2, ch2 = 410, 340
+    draw.rounded_rectangle([55, cy2, W-55, cy2+ch2], radius=20,
+                            fill=CARD, outline=(200,178,240), width=2)
+    reveal = min(t/(total*0.6), 1.0)
+    cw2    = W-120
+    ch_img = chart_img.resize((cw2, int(chart_img.height*cw2/chart_img.width)), Image.LANCZOS)
+    rw     = max(4, int(cw2*reveal))
+    img.paste(ch_img.crop((0,0,rw,ch_img.height)), (80, cy2+10))
+
+    # Gainers + Losers
+    if reveal > 0.5:
+        row_e = ease_out((reveal-0.5)/0.5, 1.0)
+        gy = cy2 + ch2 + 30
+
+        # Gainers header
+        draw.text((90, gy), "TOP GAINERS", font=get_font(30,True), fill=GREEN)
+        draw.text((W//2+20, gy), "TOP LOSERS", font=get_font(30,True), fill=RED)
+
+        for i, (g, l) in enumerate(zip(gainers, losers)):
+            ry = int(gy + 50 + i*90 + 40*(1-row_e))
+            # Gainer
+            draw.rounded_rectangle([70, ry, W//2-20, ry+76],
+                                    radius=14, fill=(235,255,240))
+            draw.text((85, ry+8),  g["name"][:12], font=get_font(28,True), fill=TEXT_DARK)
+            draw.text((85, ry+42), f"▲ {g['change']:.2f}%", font=get_font(26), fill=GREEN)
+            # Loser
+            draw.rounded_rectangle([W//2+20, ry, W-70, ry+76],
+                                    radius=14, fill=(255,235,235))
+            draw.text((W//2+35, ry+8),  l["name"][:12], font=get_font(28,True), fill=TEXT_DARK)
+            draw.text((W//2+35, ry+42), f"▼ {abs(l['change']):.2f}%", font=get_font(26), fill=RED)
+
+    return np.array(img)
+
+
 # ── Main ───────────────────────────────────────────────────────
 def create_reel(article, output_path):
     title = re.sub(r"[^\x00-\x7F]+", "", article["title"]).strip()
     print(f"  Creating reel: {title[:65]}")
 
-    ticker = detect_ticker(title)
-    sd     = fetch_stock(ticker) if ticker else fetch_nifty()
-    if not sd:
-        print("  [!] Falling back to Nifty data")
-        sd = dict(name="NIFTY 50", ticker="NIFTY", current=24500.0,
-                  prev=24300.0, change=0.82, hi52=26277.0, lo52=21964.0,
-                  pe=None, mcap=None, vol=None, eps=None,
-                  history=[24000+i*25 for i in range(30)])
+    # Dynamic ticker detection
+    ticker = detect_ticker_dynamic(title)
+    sd     = fetch_stock(ticker) if ticker else None
+    is_stock_reel = sd is not None
 
-    print(f"  {sd['name']} | ₹{sd['current']:,.2f} | {sd['change']:+.2f}%")
-    chart_img = make_chart(sd["history"], sd["change"])
+    if not is_stock_reel:
+        print("  No specific stock found — using Market Pulse fallback")
+
     question  = hook_question(title)
-
-    # Fetch company logo
-    logo_img = None
-    if ticker:
-        print("  Fetching company logo...")
-        logo_img = fetch_logo(ticker)
-        if logo_img:
-            print("  [✓] Logo fetched")
-        else:
-            print("  [!] No logo found, using text fallback")
+    chart_img = make_chart(
+        sd["history"] if sd else fetch_nifty()["history"],
+        sd["change"]  if sd else 0
+    )
 
     def make_clip(fn, dur, **kw):
         return VideoClip(lambda t: fn(t, **kw).astype(np.uint8),
                          duration=dur).with_fps(FPS)
 
     print("  Rendering sections...")
-    clips = [
-        make_clip(f_hook,     2.0,  question=question),
-        make_clip(f_stock,    2.0,  sd=sd),                          # 2s only
-        make_clip(f_chart,    8.0,  sd=sd, chart_img=chart_img, logo_img=logo_img),
-        make_clip(f_headline, 5.0,  headline=title),
-        make_clip(f_outro,    2.0),
-    ]
+
+    if is_stock_reel:
+        print(f"  {sd['name']} | Rs{sd['current']:,.2f} | {sd['change']:+.2f}%")
+        logo_img = None
+        print("  Fetching company logo...")
+        logo_img = fetch_logo(ticker)
+        print("  [✓] Logo fetched" if logo_img else "  [!] No logo, using text fallback")
+
+        clips = [
+            make_clip(f_hook,     2.0, question=question),
+            make_clip(f_stock,    2.0, sd=sd),
+            make_clip(f_chart,    8.0, sd=sd, chart_img=chart_img, logo_img=logo_img),
+            make_clip(f_headline, 5.0, headline=title),
+            make_clip(f_outro,    2.0),
+        ]
+    else:
+        # Market Pulse fallback
+        nifty = fetch_nifty() or dict(name="NIFTY 50", current=24500.0,
+                                       change=0.5, history=[])
+        chart_img = make_chart(nifty["history"], nifty["change"])
+        print("  Fetching top movers...")
+        gainers, losers = fetch_top_movers()
+
+        mq = "What moved the\nmarket today?"
+        clips = [
+            make_clip(f_hook,         2.0, question=mq),
+            make_clip(f_market_pulse, 9.0, nifty=nifty, gainers=gainers,
+                      losers=losers, chart_img=chart_img),
+            make_clip(f_headline,     5.0, headline=title),
+            make_clip(f_outro,        2.0),
+        ]
 
     video = concatenate_videoclips(clips)
 
@@ -543,9 +684,10 @@ def create_reel(article, output_path):
     if music_files:
         try:
             audio = AudioFileClip(os.path.join(MUSIC_DIR, random.choice(music_files)))
-            audio = audio.with_subclip(0, min(DURATION, audio.duration)).audio_fadeout(2)
+            dur   = sum(c.duration for c in clips)
+            audio = audio.with_subclip(0, min(dur, audio.duration)).audio_fadeout(2)
             video = video.with_audio(audio)
-            print(f"  Music added")
+            print("  Music added")
         except Exception as e:
             print(f"  [!] Music error: {e}")
     else:
