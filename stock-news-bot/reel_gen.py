@@ -306,36 +306,73 @@ def f_hook(t, question):
     return np.array(img)
 
 
-def fetch_logo(ticker_ns):
-    """Fetch company logo from Logo.dev (free, no API key needed)."""
-    import requests
-    # Map NSE ticker to company domain
-    DOMAINS = {
-        "TATASTEEL.NS":"tatasteel.com","TATAPOWER.NS":"tatapower.com",
-        "TATAMOTORS.NS":"tatamotors.com","RELIANCE.NS":"ril.com",
-        "INFY.NS":"infosys.com","HDFCBANK.NS":"hdfcbank.com",
-        "ICICIBANK.NS":"icicibank.com","WIPRO.NS":"wipro.com",
-        "TCS.NS":"tcs.com","BAJFINANCE.NS":"bajajfinserv.in",
-        "ADANIENT.NS":"adani.com","NESTLEIND.NS":"nestle.in",
-        "HCLTECH.NS":"hcltech.com","AXISBANK.NS":"axisbank.com",
-        "KOTAKBANK.NS":"kotak.com","SBIN.NS":"sbi.co.in",
-        "MARUTI.NS":"marutisuzuki.com","ZOMATO.NS":"zomato.com",
-        "VEDL.NS":"vedantalimited.com","TRENT.NS":"trent.in",
-        "SUZLON.NS":"suzlon.com","OLAELEC.NS":"olaelectric.com",
-    }
-    domain = DOMAINS.get(ticker_ns)
-    if not domain:
-        return None
-    try:
-        url  = f"https://img.logo.dev/{domain}?token=pk_free&size=200&format=png"
-        resp = requests.get(url, timeout=8)
-        if resp.status_code == 200 and len(resp.content) > 500:
-            from io import BytesIO
-            logo = Image.open(BytesIO(resp.content)).convert("RGBA")
-            return logo
-    except Exception as e:
-        print(f"  [!] Logo fetch failed: {e}")
-    return None
+def make_company_avatar(sd):
+    """
+    Generate a creative company avatar image.
+    Shows initials in a styled circle with performance color ring,
+    mini sparkline, and sector badge. Always looks great, no external API needed.
+    """
+    size = 400
+    img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    chg_col = GREEN if sd["change"] >= 0 else RED
+
+    # Pick a unique background color per company (hash-based)
+    name    = sd.get("name", "XX")
+    hue_val = sum(ord(c) for c in name) % 360
+    # Convert hue to RGB (simple pastel)
+    import colorsys
+    r, g, b = colorsys.hsv_to_rgb(hue_val/360, 0.35, 0.95)
+    bg_col  = (int(r*255), int(g*255), int(b*255), 255)
+
+    # Outer performance ring
+    ring_col = (*chg_col, 255)
+    draw.ellipse([4, 4, size-4, size-4], fill=bg_col, outline=ring_col, width=12)
+
+    # Inner circle
+    pad = 28
+    draw.ellipse([pad, pad, size-pad, size-pad], fill=(*bg_col[:3], 230))
+
+    # Company initials — up to 2 chars
+    words    = [w for w in name.split() if w and w[0].isupper()]
+    initials = "".join(w[0] for w in words[:2]).upper() or name[:2].upper()
+
+    # Auto-size font to fit
+    for fsize in [160, 130, 110, 90]:
+        f = get_font(fsize, bold=True)
+        iw = tw(draw, initials, f)
+        if iw < size - 80:
+            break
+    ih = f.size
+    draw.text(((size - iw)//2, (size - ih)//2 - 10),
+              initials, font=f, fill=(*ACCENT[:3], 255))
+
+    # Mini sparkline at bottom of circle
+    if sd.get("history") and len(sd["history"]) > 5:
+        prices = sd["history"][-15:]
+        mn, mx = min(prices), max(prices)
+        if mx > mn:
+            sp_x1, sp_x2 = 60, size-60
+            sp_y1, sp_y2 = size-80, size-50
+            pts = []
+            for i, p in enumerate(prices):
+                x = sp_x1 + int((sp_x2-sp_x1)*i/(len(prices)-1))
+                y = sp_y2 - int((sp_y2-sp_y1)*(p-mn)/(mx-mn))
+                pts.append((x, y))
+            for i in range(len(pts)-1):
+                draw.line([pts[i], pts[i+1]], fill=ring_col, width=4)
+
+    # Change % badge at top
+    chg_str = f"{'▲' if sd['change']>=0 else '▼'}{abs(sd['change']):.1f}%"
+    cf      = get_font(32, bold=True)
+    cw2     = tw(draw, chg_str, cf) + 24
+    bx      = (size - cw2) // 2
+    draw.rounded_rectangle([bx, 8, bx+cw2, 52], radius=20,
+                            fill=(*chg_col, 230))
+    draw.text((bx+12, 12), chg_str, font=cf, fill=(255,255,255,255))
+
+    return img
 
 
 def f_stock(t, sd):
@@ -462,22 +499,18 @@ def f_chart(t, sd, chart_img, logo_img=None, total=8.0):
 
         if logo_img and reveal > 0.7:
             logo_e = ease_out((reveal-0.7)/0.3, 1.0)
-            # Paste logo centered, max 200px tall
-            lh = min(180, logo_card_h - 80)
-            lw = int(logo_img.width * lh / logo_img.height)
-            lw = min(lw, W-200)
+            lh = min(220, logo_card_h - 80)
+            lw = lh  # avatar is square
             logo_resized = logo_img.resize((lw, lh), Image.LANCZOS)
             lx = (W - lw) // 2
-            ly = logo_y + (logo_card_h - lh - 60) // 2
-            # Paste with alpha
-            if logo_resized.mode == "RGBA":
-                img.paste(logo_resized, (lx, ly), logo_resized)
-            else:
-                img.paste(logo_resized, (lx, ly))
+            ly = logo_y + (logo_card_h - lh - 50) // 2
+            # Always paste with alpha mask
+            img.paste(logo_resized.convert("RGB"),
+                      (lx, ly),
+                      logo_resized.split()[3] if logo_resized.mode == "RGBA" else None)
             draw = ImageDraw.Draw(img)
-            # Company name below logo
-            name_f = get_font(40, bold=True)
-            draw.text((cx(draw, sd["name"][:24], name_f), logo_y+logo_card_h-70),
+            name_f = get_font(38, bold=True)
+            draw.text((cx(draw, sd["name"][:24], name_f), logo_y+logo_card_h-65),
                       sd["name"][:24], font=name_f, fill=TEXT_DARK)
         else:
             # No logo — show stock name + sector nicely
@@ -647,10 +680,8 @@ def create_reel(article, output_path):
 
     if is_stock_reel:
         print(f"  {sd['name']} | Rs{sd['current']:,.2f} | {sd['change']:+.2f}%")
-        logo_img = None
-        print("  Fetching company logo...")
-        logo_img = fetch_logo(ticker)
-        print("  [✓] Logo fetched" if logo_img else "  [!] No logo, using text fallback")
+        logo_img = make_company_avatar(sd)
+        print("  [✓] Company avatar generated")
 
         clips = [
             make_clip(f_hook,     2.0, question=question),
