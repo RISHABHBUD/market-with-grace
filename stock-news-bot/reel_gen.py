@@ -514,20 +514,12 @@ def create_reel(article, output_path):
     chart_img = make_chart_image(stock_data["history"], stock_data["change"])
 
     # Build video clips
-    clips = []
-
-    # Intro (0-3s)
-    intro = ImageClip(
-        np.array([frame_intro(t / FPS) for t in range(int(3 * FPS))]),
-        fps=FPS
-    ) if False else None  # use make_frame instead
 
     def make_clip(frame_fn, duration, **kwargs):
-        return ImageClip(
-            np.array([frame_fn(t / FPS, **kwargs)
-                      for t in range(int(duration * FPS))]),
-            fps=FPS
-        ).set_duration(duration)
+        from moviepy import VideoClip
+        def make_frame(t):
+            return frame_fn(t, **kwargs).astype(np.uint8)
+        return VideoClip(make_frame, duration=duration).with_fps(FPS)
 
     print("  Rendering intro...")
     c1 = make_clip(frame_intro, 3.0)
@@ -555,9 +547,8 @@ def create_reel(article, output_path):
     if music_files:
         music_path = os.path.join(MUSIC_DIR, random.choice(music_files))
         try:
-            audio = AudioFileClip(music_path).subclip(0, DURATION)
-            audio = audio.audio_fadeout(2)
-            video = video.set_audio(audio)
+            audio = AudioFileClip(music_path).with_subclip(0, DURATION).audio_fadeout(2)
+            video = video.with_audio(audio)
             print(f"  Music: {os.path.basename(music_path)}")
         except Exception as e:
             print(f"  [!] Music failed: {e}")
