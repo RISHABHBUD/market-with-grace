@@ -630,62 +630,109 @@ def f_outro(t, total=2.0):
 
     return np.array(img)
 
-def f_market_pulse(t, nifty, gainers, losers, chart_img, total=8.0):
-    """Fallback reel frame — Market Pulse with Nifty + top movers."""
+def f_market_pulse(t, nifty, gainers, losers, chart_img, total=9.0):
+    """Fallback reel — Market Pulse. Fills full 1080x1920 canvas."""
     img  = base()
     draw = ImageDraw.Draw(img)
-    brand_bar(draw)
+    brand_bar(draw)   # 55-200px
 
-    e = ease_out(t, 0.5)
-
-    # Title
-    lf = get_font(44, bold=True)
-    draw.text((cx(draw,"Market Pulse",lf), 225), "Market Pulse",
-              font=lf, fill=ACCENT)
-    draw.text((cx(draw,"Today's Top Movers",get_font(32)), 282),
-              "Today's Top Movers", font=get_font(32), fill=TEXT_LIGHT)
-
-    # Nifty summary bar
+    reveal  = min(t / (total * 0.7), 1.0)
     chg_col = GREEN if nifty["change"] >= 0 else RED
     arrow   = "▲" if nifty["change"] >= 0 else "▼"
-    nbar    = f"NIFTY 50   ₹{nifty['current']:,.0f}   {arrow}{abs(nifty['change']):.2f}%"
-    nf2     = get_font(38, bold=True)
-    nw      = tw(draw, nbar, nf2) + 60
-    draw.rounded_rectangle([W//2-nw//2, 330, W//2+nw//2, 390],
-                            radius=22, fill=chg_col)
-    draw.text((W//2-nw//2+30, 336), nbar, font=nf2, fill=WHITE)
 
-    # Mini chart
-    cy2, ch2 = 410, 340
-    draw.rounded_rectangle([55, cy2, W-55, cy2+ch2], radius=20,
-                            fill=CARD, outline=(200,178,240), width=2)
-    reveal = min(t/(total*0.6), 1.0)
-    cw2    = W-120
-    ch_img = chart_img.resize((cw2, int(chart_img.height*cw2/chart_img.width)), Image.LANCZOS)
-    rw     = max(4, int(cw2*reveal))
-    img.paste(ch_img.crop((0,0,rw,ch_img.height)), (80, cy2+10))
+    # ── Section title ──────────────────────────────────────────
+    draw.text((cx(draw,"Market Pulse",get_font(48,True)), 218),
+              "Market Pulse", font=get_font(48,True), fill=ACCENT)
 
-    # Gainers + Losers
-    if reveal > 0.5:
-        row_e = ease_out((reveal-0.5)/0.5, 1.0)
-        gy = cy2 + ch2 + 30
+    # ── Nifty bar ──────────────────────────────────────────────
+    nbar = f"NIFTY 50   {nifty['current']:,.0f}   {arrow}{abs(nifty['change']):.2f}%"
+    nf2  = get_font(40, bold=True)
+    nw   = min(tw(draw, nbar, nf2) + 60, W - 110)
+    draw.rounded_rectangle([W//2-nw//2, 278, W//2+nw//2, 338],
+                            radius=24, fill=chg_col)
+    draw.text((W//2 - tw(draw,nbar,nf2)//2, 284), nbar, font=nf2, fill=WHITE)
 
-        # Gainers header
-        draw.text((90, gy), "TOP GAINERS", font=get_font(30,True), fill=GREEN)
-        draw.text((W//2+20, gy), "TOP LOSERS", font=get_font(30,True), fill=RED)
+    # ── Chart card — fixed height, clipped properly ────────────
+    cy2  = 355
+    ch2  = 420   # chart card height
+    draw.rounded_rectangle([55, cy2, W-55, cy2+ch2],
+                            radius=22, fill=CARD, outline=(200,178,240), width=2)
 
-        for i, (g, l) in enumerate(zip(gainers, losers)):
-            ry = int(gy + 50 + i*90 + 40*(1-row_e))
-            # Gainer
-            draw.rounded_rectangle([70, ry, W//2-20, ry+76],
-                                    radius=14, fill=(235,255,240))
-            draw.text((85, ry+8),  g["name"][:12], font=get_font(28,True), fill=TEXT_DARK)
-            draw.text((85, ry+42), f"▲ {g['change']:.2f}%", font=get_font(26), fill=GREEN)
-            # Loser
-            draw.rounded_rectangle([W//2+20, ry, W-70, ry+76],
-                                    radius=14, fill=(255,235,235))
-            draw.text((W//2+35, ry+8),  l["name"][:12], font=get_font(28,True), fill=TEXT_DARK)
-            draw.text((W//2+35, ry+42), f"▼ {abs(l['change']):.2f}%", font=get_font(26), fill=RED)
+    cw2     = W - 130   # chart width inside card
+    target_h = ch2 - 20
+    # Resize chart to fit exactly inside card
+    ch_img  = chart_img.resize((cw2, target_h), Image.LANCZOS)
+    rw      = max(4, int(cw2 * reveal))
+    # Crop and paste — guaranteed to stay inside card
+    cropped = ch_img.crop((0, 0, rw, target_h))
+    img.paste(cropped, (80, cy2 + 10))
+
+    # ── Gainers + Losers — fills rest of screen ────────────────
+    section_y = cy2 + ch2 + 22   # ~797px
+    available = H - section_y - 55  # space until footer (~1068px)
+
+    if reveal > 0.45:
+        row_e = ease_out((reveal - 0.45) / 0.55, 1.0)
+
+        # Headers
+        hf = get_font(34, bold=True)
+        draw.text((90, section_y), "TOP GAINERS", font=hf, fill=GREEN)
+        draw.text((W//2 + 20, section_y), "TOP LOSERS", font=hf, fill=RED)
+
+        # Divider line between columns
+        draw.rectangle([W//2-1, section_y, W//2+1, H-55], fill=ACCENT_LIGHT)
+
+        n_rows  = min(len(gainers), len(losers), 3)
+        row_h   = (available - 52) // n_rows   # dynamic row height
+        row_h   = min(row_h, 200)              # cap at 200px
+
+        for i in range(n_rows):
+            g  = gainers[i]
+            l  = losers[i]
+            ry = int(section_y + 52 + i * row_h + 30*(1-row_e))
+
+            half = W//2 - 20
+
+            # ── Gainer card ────────────────────────────────────
+            draw.rounded_rectangle([65, ry, half, ry+row_h-12],
+                                    radius=18, fill=(230,255,238),
+                                    outline=(180,240,200), width=1)
+            # Green top strip
+            draw.rounded_rectangle([65, ry, half, ry+8], radius=18, fill=GREEN)
+
+            gname = g["name"][:14]
+            gprice = f"Rs{g['price']:,.1f}"
+            gchg   = f"▲ {g['change']:.2f}%"
+
+            nf3 = get_font(34, bold=True)
+            pf3 = get_font(28)
+            cf3 = get_font(36, bold=True)
+
+            draw.text((85, ry+18), gname,  font=nf3, fill=TEXT_DARK)
+            draw.text((85, ry+60), gprice, font=pf3, fill=TEXT_MID)
+            draw.text((85, ry+96), gchg,   font=cf3, fill=GREEN)
+
+            # ── Loser card ─────────────────────────────────────
+            lx = W//2 + 20
+            draw.rounded_rectangle([lx, ry, W-65, ry+row_h-12],
+                                    radius=18, fill=(255,230,232),
+                                    outline=(240,180,185), width=1)
+            draw.rounded_rectangle([lx, ry, W-65, ry+8], radius=18, fill=RED)
+
+            lname  = l["name"][:14]
+            lprice = f"Rs{l['price']:,.1f}"
+            lchg   = f"▼ {abs(l['change']):.2f}%"
+
+            draw.text((lx+20, ry+18), lname,  font=nf3, fill=TEXT_DARK)
+            draw.text((lx+20, ry+60), lprice, font=pf3, fill=TEXT_MID)
+            draw.text((lx+20, ry+96), lchg,   font=cf3, fill=RED)
+
+    # ── Footer brand bar ───────────────────────────────────────
+    draw.rounded_rectangle([55, H-145, W-55, H-38], radius=24, fill=ACCENT)
+    draw.text((cx(draw,PAGE_NAME,get_font(42,True)), H-128),
+              PAGE_NAME, font=get_font(42,True), fill=WHITE)
+    draw.text((cx(draw,PAGE_HANDLE,get_font(28)), H-76),
+              PAGE_HANDLE, font=get_font(28), fill=ACCENT_LIGHT)
 
     return np.array(img)
 
@@ -737,8 +784,7 @@ def create_reel(article, output_path):
         clips = [
             make_clip(f_hook,         2.0, question=mq),
             make_clip(f_market_pulse, 9.0, nifty=nifty, gainers=gainers,
-                      losers=losers, chart_img=chart_img),
-            make_clip(f_headline,     5.0, headline=title),
+                      losers=losers, chart_img=chart_img),            make_clip(f_headline,     5.0, headline=title),
             make_clip(f_outro,        2.0),
         ]
 
