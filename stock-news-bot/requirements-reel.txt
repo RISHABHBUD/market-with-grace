@@ -1,7 +1,8 @@
 Pillow
 requests
 beautifulsoup4
-moviepy
+moviepy>=2.0
 yfinance
 matplotlib
 numpy
+imageio[ffmpeg]

@@ -16,9 +16,9 @@ import random
 import textwrap
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import (
+from moviepy import (
     ImageClip, AudioFileClip, CompositeVideoClip,
-    concatenate_videoclips, VideoFileClip
+    concatenate_videoclips
 )
 import yfinance as yf
 import matplotlib
