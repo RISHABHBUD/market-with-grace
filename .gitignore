@@ -7,3 +7,5 @@ venv/
 *.egg-info/
 .DS_Store
 Thumbs.db
+stock-news-bot/client_secrets.json
+stock-news-bot/token.pickle
