@@ -6,6 +6,7 @@ Run: python run_reel.py
 
 import os
 import sys
+import re
 from datetime import datetime
 
 from fetcher   import fetch_all_articles
@@ -59,13 +60,25 @@ def main():
     with open(caption_path, "w", encoding="utf-8") as f:
         f.write(caption)
 
-    # 4. Upload + publish
-    print("\n[4/5] Uploading and publishing reel...")
+    # 4. Upload + publish to Instagram
+    print("\n[4/6] Uploading and publishing to Instagram...")
     video_url = upload_video_to_cloudinary(reel_path)
     post_reel_to_instagram(video_url, caption)
 
-    # 5. Track
-    print("\n[5/5] Updating tracker...")
+    # 5. Upload to YouTube Shorts
+    print("\n[5/6] Uploading to YouTube Shorts...")
+    try:
+        from youtube_upload import upload_to_youtube
+        yt_title = re.sub(r"[^\x00-\x7F]+", "", selected["title"]).strip()[:85]
+        upload_to_youtube(reel_path, yt_title, caption)
+    except FileNotFoundError:
+        print("  [!] client_secrets.json not found — skipping YouTube upload")
+        print("  [!] Run: python youtube_upload.py --auth  to set up YouTube")
+    except Exception as e:
+        print(f"  [!] YouTube upload failed: {e}")
+
+    # 6. Track
+    print("\n[6/6] Updating tracker...")
     reel_article = dict(selected)
     reel_article["title"] = reel_tracker_key + selected["title"]
     posted = mark_posted(reel_article, posted)

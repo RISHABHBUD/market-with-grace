@@ -35,6 +35,9 @@ jobs:
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         run: |
           cd stock-news-bot
+          # Decode YouTube credentials from secrets
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS }}" > client_secrets.json
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE }}" | base64 -d > token.pickle
           python run_reel.py
 
       - name: Commit reel and tracker
