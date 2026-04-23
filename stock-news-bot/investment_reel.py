@@ -192,12 +192,12 @@ def f_hook(t, name, years, total=2.0):
         draw = ImageDraw.Draw(img)
 
     # Hook text
-    yr_str = f"{int(years)} saal" if years >= 1 else f"{int(years*12)} mahine"
+    yr_str = f"{int(years)} years" if years >= 1 else f"{int(years*12)} months"
     lines  = [
-        "Agar aapne",
-        f"{yr_str} pehle",
-        "Rs 1 Lakh lagaye hote",
-        name + " mein...",
+        "What if you had",
+        f"invested Rs 1 Lakh",
+        f"{yr_str} ago in",
+        name + "?",
     ]
 
     max_w = W - 100
@@ -298,8 +298,8 @@ def f_result(t, data, total=5.0):
 
     # Arrow animation
     arrow_y = card_y + 120
-    draw.text((cx(draw, "Rs 1,00,000", get_font(52,True)), arrow_y),
-              "Rs 1,00,000", font=get_font(52,True), fill=MUTED)
+    draw.text((cx(draw, "Rs 1,00,000 Invested", get_font(52,True)), arrow_y),
+              "Rs 1,00,000 Invested", font=get_font(52,True), fill=MUTED)
 
     if t > 0.4:
         ae = ease_out(t-0.4, 0.5)
@@ -359,8 +359,8 @@ def f_outro(t, total=2.0):
 
     if t > 0.6:
         ce = ease_out(t-0.6, 0.5)
-        lines = ["Aisi aur stocks ki kahani",
-                 "dekhne ke liye Follow karein!"]
+        lines = ["Follow for daily stock",
+                 "investment insights!"]
         y = H//2 - 40
         for line in lines:
             f = get_font(int(44*ce))

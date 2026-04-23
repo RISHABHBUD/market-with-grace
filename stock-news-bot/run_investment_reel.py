@@ -39,9 +39,9 @@ def main():
     print("\n[3/4] Posting to Instagram...")
     try:
         caption = (
-            f"Agar aapne {display_name} mein invest kiya hota toh aaj "
-            f"aapka paisa kitna hota? Dekho is reel mein!\n\n"
-            f"Follow {chr(64)}stockdev.in for daily investment insights\n\n"
+            f"If you had invested Rs 1 Lakh in {display_name}, "
+            f"here's what it would be worth today!\n\n"
+            f"Follow @stockdev.in for daily investment insights\n\n"
             f"#StockMarket #IndianStockMarket #Investing #WealthCreation "
             f"#StockDevIn #Nifty500 #LongTermInvesting #ShareBazaar "
             f"#{display_name.replace(' ','')} #StockReturns"
