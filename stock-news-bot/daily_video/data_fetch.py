@@ -10,14 +10,14 @@ NIFTY50_STOCKS = [
     "HINDUNILVR.NS","ITC.NS","SBIN.NS","BHARTIARTL.NS","KOTAKBANK.NS",
     "LT.NS","AXISBANK.NS","ASIANPAINT.NS","MARUTI.NS","TITAN.NS",
     "BAJFINANCE.NS","WIPRO.NS","HCLTECH.NS","ULTRACEMCO.NS","NESTLEIND.NS",
-    "ADANIENT.NS","TATAMOTORS.NS","TATASTEEL.NS","SUNPHARMA.NS","ONGC.NS",
+    "ADANIENT.NS","TATAMOTOR.NS","TATASTEEL.NS","SUNPHARMA.NS","ONGC.NS",
     "NTPC.NS","POWERGRID.NS","COALINDIA.NS","JSWSTEEL.NS","BAJAJFINSV.NS",
 ]
 
 SECTORS = [
     ("IT",      ["INFY.NS","TCS.NS","WIPRO.NS","HCLTECH.NS"]),
     ("Banking", ["HDFCBANK.NS","ICICIBANK.NS","SBIN.NS","AXISBANK.NS","KOTAKBANK.NS"]),
-    ("Auto",    ["MARUTI.NS","TATAMOTORS.NS","BAJAJ-AUTO.NS"]),
+    ("Auto",    ["MARUTI.NS","TATAMOTOR.NS","BAJAJAUTO.NS"]),
     ("Pharma",  ["SUNPHARMA.NS","DRREDDY.NS","CIPLA.NS"]),
     ("Energy",  ["RELIANCE.NS","ONGC.NS","NTPC.NS","POWERGRID.NS"]),
     ("Metal",   ["TATASTEEL.NS","JSWSTEEL.NS","HINDALCO.NS"]),
@@ -43,23 +43,32 @@ def fetch_index(ticker):
 
 
 def fetch_movers():
-    movers = []
-    for sym in NIFTY50_STOCKS:
-        try:
-            t    = yf.Ticker(sym)
-            hist = t.history(period="2d")
-            if len(hist) < 2:
-                continue
-            cur  = hist["Close"].iloc[-1]
-            prev = hist["Close"].iloc[-2]
-            pct  = (cur - prev) / prev * 100
-            name = sym.replace(".NS", "").replace(".BO", "")
-            movers.append(dict(name=name, change_pct=pct, price=cur, ticker=sym))
-        except:
-            continue
-
-    movers.sort(key=lambda x: x["change_pct"], reverse=True)
-    return movers[:5], movers[-5:][::-1]
+    """Batch fetch all stocks at once — much faster than one by one."""
+    try:
+        import yfinance as yf
+        data = yf.download(
+            " ".join(NIFTY50_STOCKS),
+            period="2d", auto_adjust=True,
+            progress=False, threads=True
+        )
+        closes = data["Close"]
+        movers = []
+        for sym in NIFTY50_STOCKS:
+            try:
+                col = closes[sym].dropna()
+                if len(col) < 2: continue
+                cur  = col.iloc[-1]
+                prev = col.iloc[-2]
+                pct  = (cur - prev) / prev * 100
+                name = sym.replace(".NS","").replace(".BO","")
+                movers.append(dict(name=name, change_pct=float(pct),
+                                   price=float(cur), ticker=sym))
+            except: continue
+        movers.sort(key=lambda x: x["change_pct"], reverse=True)
+        return movers[:5], movers[-5:][::-1]
+    except Exception as e:
+        print(f"  [!] Batch fetch failed: {e}")
+        return [], []
 
 
 def fetch_sectors():
