@@ -1,0 +1,43 @@
+name: StockDev.in - Daily YouTube Video
+
+on:
+  # Triggered by cron-job.org at 5:00 PM IST (11:30 UTC) on weekdays
+  workflow_dispatch:
+
+jobs:
+  daily-video:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r stock-news-bot/requirements-daily.txt
+
+      - name: Generate and upload daily video
+        env:
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+        run: |
+          cd stock-news-bot
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS }}" > client_secrets.json
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE }}" | base64 -d > token.pickle
+          python run_daily_video.py
+
+      - name: Commit video archive
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add stock-news-bot/posts/daily_videos/ || true
+          git diff --staged --quiet || git commit -m "auto: daily video $(date +'%Y-%m-%d')"
+          git push
