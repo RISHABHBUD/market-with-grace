@@ -9,7 +9,8 @@ from datetime import datetime
 
 from nifty500         import get_todays_stock
 from investment_reel  import create_investment_reel
-from poster           import upload_to_cloudinary, post_reel_to_instagram
+from poster           import post_reel_to_instagram
+from run_reel         import upload_video_to_cloudinary
 from youtube_upload   import upload_to_youtube
 from config           import OUTPUT_FOLDER
 
@@ -46,7 +47,7 @@ def main():
             f"#StockDevIn #Nifty500 #LongTermInvesting #ShareBazaar "
             f"#{display_name.replace(' ','')} #StockReturns"
         )
-        video_url = upload_to_cloudinary(reel_path)
+        video_url = upload_video_to_cloudinary(reel_path)
         post_reel_to_instagram(video_url, caption)
     except Exception as e:
         print(f"  [!] Instagram post failed: {e}")

@@ -438,7 +438,7 @@ def create_investment_reel(display_name, ticker, output_path):
         try:
             audio = AudioFileClip(os.path.join(MUSIC_DIR, random.choice(music_files)))
             dur   = sum(c.duration for c in clips)
-            audio = audio.with_subclip(0, min(dur, audio.duration)).audio_fadeout(2)
+            audio = audio.subclipped(0, min(dur, audio.duration)).audio_fadeout(2)
             video = video.with_audio(audio)
         except Exception as e:
             print(f"  [!] Music error: {e}")
