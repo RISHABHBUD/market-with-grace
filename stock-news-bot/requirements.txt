@@ -1,3 +1,19 @@
+# ── Core (Instagram image posts) ──────────────────────────────
 Pillow
 requests
 beautifulsoup4
+
+# ── Reels (Instagram + YouTube Shorts) ────────────────────────
+moviepy>=2.0
+yfinance
+matplotlib
+numpy
+imageio[ffmpeg]
+
+# ── Daily YouTube Video ────────────────────────────────────────
+gtts
+
+# ── YouTube Upload ─────────────────────────────────────────────
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib

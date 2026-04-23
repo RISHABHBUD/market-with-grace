@@ -23,7 +23,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r stock-news-bot/requirements-daily.txt
+        run: pip install -r stock-news-bot/requirements.txt
 
       - name: Generate and upload daily video
         env:
