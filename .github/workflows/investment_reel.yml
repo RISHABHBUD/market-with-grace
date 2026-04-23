@@ -1,0 +1,48 @@
+name: StockDev.in - Investment Reel
+
+on:
+  # Triggered by cron-job.org once daily
+  # Recommended: 10:00 AM IST (04:30 UTC) weekdays
+  workflow_dispatch:
+
+jobs:
+  investment-reel:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r stock-news-bot/requirements.txt
+
+      - name: Generate and post investment reel
+        env:
+          CLOUDINARY_CLOUD_NAME:  ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY:     ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET:  ${{ secrets.CLOUDINARY_API_SECRET }}
+          INSTAGRAM_USER_ID:      ${{ secrets.INSTAGRAM_USER_ID }}
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+        run: |
+          cd stock-news-bot
+          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS }}" > client_secrets.json
+          echo "${{ secrets.YOUTUBE_TOKEN_PICKLE }}" | base64 -d > token.pickle
+          python run_investment_reel.py
+
+      - name: Commit output
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add stock-news-bot/posts/investment_reels/ || true
+          git diff --staged --quiet || git commit -m "auto: investment reel $(date +'%Y-%m-%d')"
+          git push
