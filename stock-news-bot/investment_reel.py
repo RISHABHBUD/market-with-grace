@@ -120,9 +120,10 @@ def fetch_investment_data(ticker, years=10):
     return None
 
 
-def make_investment_chart(data, reveal=1.0, w=960, h=600):
+def make_investment_chart(data, reveal=1.0, w=960, h=560):
     """Animated investment value chart — Y axis in Rs."""
     values = data["values"]
+    # Smooth reveal — use all points but clip the line at reveal point
     n_show = max(2, int(len(values) * reveal))
     shown  = values[:n_show]
 
@@ -135,11 +136,17 @@ def make_investment_chart(data, reveal=1.0, w=960, h=600):
     fig.patch.set_facecolor("#0C1428")
     ax.set_facecolor("#101C38")
 
+    # Use all dates for x-axis range so it doesn't shrink
+    all_dates = [v[0] for v in values]
+    all_vals  = [v[1] for v in values]
+    ax.set_xlim(all_dates[0], all_dates[-1])
+    ax.set_ylim(min(all_vals)*0.92, max(all_vals)*1.05)
+
     ax.plot(dates, vals, color=color, linewidth=3, zorder=3)
-    ax.fill_between(dates, vals, start*0.95, color=color, alpha=0.2, zorder=2)
+    ax.fill_between(dates, vals, start*0.92, color=color, alpha=0.2, zorder=2)
 
     # Reference line at Rs 1 lakh
-    ax.axhline(y=start, color="#FFFFFF", linewidth=1, linestyle="--", alpha=0.3)
+    ax.axhline(y=start, color="#FFFFFF", linewidth=1.2, linestyle="--", alpha=0.35)
 
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#1E3060"); ax.spines["bottom"].set_color("#1E3060")
@@ -154,7 +161,7 @@ def make_investment_chart(data, reveal=1.0, w=960, h=600):
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%Y"))
     ax.grid(axis="y", color="#1A2A50", linewidth=0.8, zorder=1)
 
-    # Dot at current value
+    # Dot at current tip
     if len(dates) > 1:
         ax.scatter([dates[-1]], [vals[-1]], color=color, s=80, zorder=5)
 
@@ -219,7 +226,7 @@ def f_hook(t, name, years, total=2.0):
 
 
 def f_chart(t, data, chart_cache, total=10.0):
-    """2-12s: Chart draws itself left to right."""
+    """2-12s: Chart draws itself left to right, stats fill bottom."""
     img  = Image.fromarray(grad_bg())
     draw = ImageDraw.Draw(img)
 
@@ -230,44 +237,54 @@ def f_chart(t, data, chart_cache, total=10.0):
 
     start_yr = data["start_date"].year
     end_yr   = data["end_date"].year
-    sub      = f"{start_yr}  →  {end_yr}"
-    draw.text((cx(draw, sub, get_font(34)), 122), sub, font=get_font(34), fill=MUTED)
+    sub      = f"{start_yr}  →  {end_yr}  |  Rs 1 Lakh Investment"
+    draw.text((cx(draw, sub, get_font(30)), 122), sub, font=get_font(30), fill=MUTED)
 
-    # Chart reveal
+    # Chart — fixed size, smooth reveal via xlim
     reveal = min(t / (total * 0.85), 1.0)
-    key    = int(reveal * 20)  # cache at 5% intervals
-
+    # Cache at fine intervals for smooth animation
+    key = int(reveal * 100)
     if key not in chart_cache:
-        chart_cache[key] = make_investment_chart(data, reveal=reveal)
+        chart_cache[key] = make_investment_chart(data, reveal=reveal, w=960, h=560)
 
-    chart = chart_cache[key]
-    cw, ch = 960, 600
-    chart  = chart.resize((cw, ch), Image.LANCZOS)
-    img.paste(chart, ((W-cw)//2, 175))
+    chart = chart_cache[key].resize((960, 560), Image.LANCZOS)
+    img.paste(chart, ((W-960)//2, 165))
 
-    # Rs 1L reference label
-    draw.text((60, 175+ch+20), "--- Rs 1 Lakh (invested)", font=get_font(26), fill=MUTED)
+    chart_bottom = 165 + 560  # = 725
 
-    # Current value counter (counts up as chart draws)
-    cur_val = data["investment"] + (data["end_value"] - data["investment"]) * reveal
-    val_str = fmt_money(cur_val)
+    # ── Bottom panel fills remaining space ─────────────────────
+    panel_y = chart_bottom + 20
     col     = GREEN if data["end_value"] >= data["investment"] else RED
 
-    vf = get_font(72, bold=True)
-    draw.text((cx(draw, val_str, vf), 175+ch+80), val_str, font=vf, fill=col)
+    # Current value — big and bold
+    cur_val = data["investment"] + (data["end_value"] - data["investment"]) * reveal
+    val_str = fmt_money(cur_val)
+    vf      = get_font(80, bold=True)
+    draw.text((cx(draw, val_str, vf), panel_y), val_str, font=vf, fill=col)
 
-    # CAGR badge
-    cagr_str = f"CAGR: {data['cagr']:.1f}% per year"
-    cf = get_font(32)
-    cw2 = tw(draw, cagr_str, cf) + 40
-    draw.rounded_rectangle([(W-cw2)//2, 175+ch+170, (W+cw2)//2, 175+ch+218],
-                            radius=20, fill=CARD)
-    draw.text(((W-tw(draw,cagr_str,cf))//2, 175+ch+178),
-              cagr_str, font=cf, fill=GOLD)
+    # CAGR + return row
+    cagr_str   = f"CAGR  {data['cagr']:.1f}%"
+    ret_str    = f"Return  {(data['end_value']/data['investment']-1)*100:.0f}%"
+    yr_str     = f"Years  {data['years']:.1f}"
 
-    # Brand
-    draw.text((cx(draw, PAGE_NAME, get_font(28,True)), H-80),
-              PAGE_NAME, font=get_font(28,True), fill=GOLD)
+    row_y = panel_y + 100
+    for i, stat in enumerate([cagr_str, ret_str, yr_str]):
+        bw = (W - 80) // 3
+        bx = 40 + i * bw
+        draw.rounded_rectangle([bx+4, row_y, bx+bw-4, row_y+90],
+                                radius=16, fill=CARD)
+        draw.text((bx+4+cx(draw,stat,get_font(30,True),bw-8), row_y+28),
+                  stat, font=get_font(30,True), fill=GOLD)
+
+    # Rs 1L reference label
+    ref_y = row_y + 110
+    draw.text((cx(draw, "--- Rs 1 Lakh (invested)", get_font(26)), ref_y),
+              "--- Rs 1 Lakh (invested)", font=get_font(26), fill=MUTED)
+
+    # Brand at very bottom
+    draw.text((cx(draw, PAGE_NAME, get_font(32,True)), H-80),
+              PAGE_NAME, font=get_font(32,True), fill=GOLD)
+    draw.rectangle([0, H-6, W, H], fill=GOLD)
 
     return np.array(img)
 
