@@ -9,7 +9,7 @@ from datetime import datetime
 
 from nifty500         import get_todays_stock
 from investment_reel  import create_investment_reel
-from poster           import post_reel_to_instagram
+from poster           import post_reel_to_instagram, post_video_to_facebook
 from run_reel         import upload_video_to_cloudinary
 from youtube_upload   import upload_to_youtube
 from config           import OUTPUT_FOLDER
@@ -49,6 +49,10 @@ def main():
         )
         video_url = upload_video_to_cloudinary(reel_path)
         post_reel_to_instagram(video_url, caption)
+        try:
+            post_video_to_facebook(reel_path, caption, title=f"{display_name} Investment Returns | StockDev.in")
+        except Exception as e:
+            print(f"  [!] Facebook post failed: {e}")
     except Exception as e:
         print(f"  [!] Instagram post failed: {e}")
 

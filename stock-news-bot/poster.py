@@ -130,3 +130,65 @@ def post_reel_to_instagram(video_url, caption):
     post_id = resp.json()["id"]
     print(f"  [✓] Reel published! Post ID: {post_id}")
     return post_id
+
+
+# ── Facebook Page posting ──────────────────────────────────────
+
+FB_PAGE_ID = "61564699910301"
+
+
+def get_page_access_token():
+    """Exchange user token for Page access token."""
+    access_token = os.environ["INSTAGRAM_ACCESS_TOKEN"]
+    resp = requests.get(
+        f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}",
+        params={"fields": "access_token", "access_token": access_token}
+    )
+    if resp.ok and "access_token" in resp.json():
+        return resp.json()["access_token"]
+    # Fall back to user token if page token not available
+    return access_token
+
+
+def post_image_to_facebook(image_url, caption):
+    """Post an image to Facebook Page."""
+    page_token = get_page_access_token()
+    resp = requests.post(
+        f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/photos",
+        data={
+            "url":          image_url,
+            "caption":      caption,
+            "access_token": page_token,
+        }
+    )
+    print(f"  Facebook image status: {resp.status_code}", flush=True)
+    if not resp.ok:
+        print(f"  Facebook image error: {resp.text}")
+        return None
+    post_id = resp.json().get("post_id") or resp.json().get("id")
+    print(f"  [✓] Posted to Facebook! Post ID: {post_id}")
+    return post_id
+
+
+def post_video_to_facebook(video_path, caption, title=""):
+    """Upload and post a video to Facebook Page."""
+    page_token = get_page_access_token()
+
+    print("  Uploading video to Facebook...")
+    with open(video_path, "rb") as f:
+        resp = requests.post(
+            f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}/videos",
+            files={"source": ("video.mp4", f, "video/mp4")},
+            data={
+                "description":  caption,
+                "title":        title or caption[:80],
+                "access_token": page_token,
+            }
+        )
+    print(f"  Facebook video status: {resp.status_code}", flush=True)
+    if not resp.ok:
+        print(f"  Facebook video error: {resp.text}")
+        return None
+    post_id = resp.json().get("id")
+    print(f"  [✓] Posted to Facebook! Video ID: {post_id}")
+    return post_id

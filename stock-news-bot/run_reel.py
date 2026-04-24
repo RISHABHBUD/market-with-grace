@@ -13,7 +13,7 @@ from fetcher   import fetch_all_articles
 from composer  import build_caption
 from reel_gen  import create_reel
 from tracker   import load_posted, save_posted, is_posted, mark_posted
-from poster    import upload_to_cloudinary, post_reel_to_instagram
+from poster    import upload_to_cloudinary, post_reel_to_instagram, post_video_to_facebook
 from config    import OUTPUT_FOLDER
 
 
@@ -60,10 +60,15 @@ def main():
     with open(caption_path, "w", encoding="utf-8") as f:
         f.write(caption)
 
-    # 4. Upload + publish to Instagram
+    # 4. Upload + publish to Instagram + Facebook
     print("\n[4/6] Uploading and publishing to Instagram...")
     video_url = upload_video_to_cloudinary(reel_path)
     post_reel_to_instagram(video_url, caption)
+    try:
+        title = re.sub(r"[^\x00-\x7F]+", "", selected["title"]).strip()[:80]
+        post_video_to_facebook(reel_path, caption, title=title)
+    except Exception as e:
+        print(f"  [!] Facebook post failed: {e}")
 
     # 5. Upload to YouTube Shorts
     print("\n[5/6] Uploading to YouTube Shorts...")
