@@ -138,16 +138,31 @@ FB_PAGE_ID = "61564699910301"
 
 
 def get_page_access_token():
-    """Exchange user token for Page access token."""
+    """Get Page access token for the Facebook Page."""
     access_token = os.environ["INSTAGRAM_ACCESS_TOKEN"]
+
+    # Get all pages managed by this user
     resp = requests.get(
-        f"https://graph.facebook.com/v19.0/{FB_PAGE_ID}",
-        params={"fields": "access_token", "access_token": access_token}
+        "https://graph.facebook.com/v19.0/me/accounts",
+        params={"access_token": access_token}
     )
-    if resp.ok and "access_token" in resp.json():
-        return resp.json()["access_token"]
-    # Fall back to user token if page token not available
-    return access_token
+    print(f"  FB accounts status: {resp.status_code}", flush=True)
+
+    if resp.ok:
+        pages = resp.json().get("data", [])
+        for page in pages:
+            if page.get("id") == FB_PAGE_ID:
+                token = page.get("access_token")
+                print(f"  [✓] Got Page token for {page.get('name')}")
+                return token
+        # If page not found by ID, use first available page
+        if pages:
+            token = pages[0].get("access_token")
+            print(f"  [✓] Using token for page: {pages[0].get('name')}")
+            return token
+
+    print(f"  [!] Could not get Page token: {resp.text[:200]}")
+    return access_token  # fallback
 
 
 def post_image_to_facebook(image_url, caption):
