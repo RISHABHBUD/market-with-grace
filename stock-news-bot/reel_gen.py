@@ -23,7 +23,7 @@ from config import PAGE_NAME, PAGE_HANDLE
 
 W, H, FPS = 1080, 1920, 30
 DURATION   = 25
-MUSIC_DIR  = os.path.join(os.path.dirname(__file__), "music")
+MUSIC_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
 
 # Palette
 BG_TOP       = (232, 218, 255)
@@ -797,7 +797,7 @@ def create_reel(article, output_path):
         try:
             audio = AudioFileClip(os.path.join(MUSIC_DIR, random.choice(music_files)))
             dur   = sum(c.duration for c in clips)
-            audio = audio.with_subclip(0, min(dur, audio.duration)).audio_fadeout(2)
+            audio = audio.subclipped(0, min(dur, audio.duration)).audio_fadeout(2)
             video = video.with_audio(audio)
             print("  Music added")
         except Exception as e:

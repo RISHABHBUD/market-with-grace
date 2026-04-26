@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from config import PAGE_NAME, PAGE_HANDLE
 
 W, H, FPS = 1080, 1920, 30
-MUSIC_DIR  = os.path.join(os.path.dirname(__file__), "music")
+MUSIC_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
 
 # Palette — dark premium feel for investment content
 BG_TOP      = (8,  12, 28)
@@ -434,12 +434,16 @@ def create_investment_reel(display_name, ticker, output_path):
     # Music
     music_files = [f for f in os.listdir(MUSIC_DIR)
                    if f.endswith((".mp3",".wav"))] if os.path.exists(MUSIC_DIR) else []
+    print(f"  Music dir: {MUSIC_DIR} | Files found: {music_files}")
     if music_files:
         try:
-            audio = AudioFileClip(os.path.join(MUSIC_DIR, random.choice(music_files)))
+            chosen = random.choice(music_files)
+            print(f"  Adding music: {chosen}")
+            audio = AudioFileClip(os.path.join(MUSIC_DIR, chosen))
             dur   = sum(c.duration for c in clips)
             audio = audio.subclipped(0, min(dur, audio.duration)).audio_fadeout(2)
             video = video.with_audio(audio)
+            print("  [✓] Music embedded")
         except Exception as e:
             print(f"  [!] Music error: {e}")
 
