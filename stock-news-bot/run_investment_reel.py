@@ -29,8 +29,9 @@ def main():
     out_dir   = os.path.join(OUTPUT_FOLDER, "investment_reels", timestamp)
     os.makedirs(out_dir, exist_ok=True)
 
-    reel_path = os.path.join(out_dir, "reel.mp4")
-    success   = create_investment_reel(display_name, ticker, reel_path)
+    reel_path  = os.path.join(out_dir, "reel.mp4")
+    thumb_path = os.path.join(out_dir, "reel_thumbnail.jpg")
+    success    = create_investment_reel(display_name, ticker, reel_path)
 
     if not success:
         print("  [!] Reel generation failed. Exiting.")
