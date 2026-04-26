@@ -441,7 +441,7 @@ def create_investment_reel(display_name, ticker, output_path):
             print(f"  Adding music: {chosen}")
             audio = AudioFileClip(os.path.join(MUSIC_DIR, chosen))
             dur   = sum(c.duration for c in clips)
-            audio = audio.subclipped(0, min(dur, audio.duration)).audio_fadeout(2)
+            audio = audio.subclipped(0, min(dur, audio.duration))
             video = video.with_audio(audio)
             print("  [✓] Music embedded")
         except Exception as e:
