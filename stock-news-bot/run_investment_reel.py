@@ -57,18 +57,18 @@ def main():
     except Exception as e:
         print(f"  [!] Instagram post failed: {e}")
 
-    # 4. Upload to YouTube Shorts — COMMENTED OUT DURING TESTING
-    # print("\n[4/4] Uploading to YouTube Shorts...")
-    # try:
-    #     yt_title = (
-    #         f"{display_name}: Rs 1 Lakh → ? | "
-    #         f"{datetime.now().strftime('%Y')} | StockDev.in #Shorts"
-    #     )
-    #     upload_to_youtube(reel_path, yt_title, caption)
-    # except FileNotFoundError:
-    #     print("  [!] YouTube credentials not found — skipping")
-    # except Exception as e:
-    #     print(f"  [!] YouTube upload failed: {e}")
+    # 4. Upload to YouTube Shorts
+    print("\n[4/4] Uploading to YouTube Shorts...")
+    try:
+        yt_title = (
+            f"{display_name}: Rs 1 Lakh → ? | "
+            f"{datetime.now().strftime('%Y')} | StockDev.in #Shorts"
+        )
+        upload_to_youtube(reel_path, yt_title, caption)
+    except FileNotFoundError:
+        print("  [!] YouTube credentials not found — skipping")
+    except Exception as e:
+        print(f"  [!] YouTube upload failed: {e}")
 
     print(f"\n✅ Investment reel done! Saved in: {out_dir}\n")
 

@@ -230,95 +230,71 @@ def make_chart(data, reveal=1.0, w=1000, h=580):
 # ── Section frames ─────────────────────────────────────────────
 
 def frame_intro(t, name, years, total=3.0):
-    """
-    0-3s: Cinematic zoom-in reveal.
-    - Background: deep space with grid
-    - Stock name zooms in from small → large with glow
-    - Gold horizontal lines sweep across
-    - Subtle vignette
-    """
+    """0-3s: Clean aesthetic intro — minimal, elegant, readable."""
     img = make_canvas()
-    img = add_grid(img, alpha=12)
-
-    # Vignette
-    vig = Image.new("RGBA", img.size, (0,0,0,0))
-    vd  = ImageDraw.Draw(vig)
-    for r in range(20, 0, -1):
-        a = int(180 * (1 - r/20)**2)
-        vd.ellipse([W//2-r*60, H//2-r*100, W//2+r*60, H//2+r*100],
-                   fill=(0,0,0,0))
-    # Simple corner vignette
-    for corner_r in range(1, 8):
-        a = int(30 * corner_r / 8)
-        vd.rectangle([0,0,W,corner_r*30], fill=(0,0,0,a))
-        vd.rectangle([0,H-corner_r*30,W,H], fill=(0,0,0,a))
-
-    img = Image.alpha_composite(img.convert("RGBA"), vig).convert("RGB")
     d   = ImageDraw.Draw(img)
 
-    # Gold sweep lines (horizontal bars that slide in)
-    p_lines = progress(t, 0.0, 0.6)
-    for i in range(3):
-        lw_  = 2 if i == 1 else 1
-        ly   = H//2 - 320 + i*320
-        lx   = int(W * ease_out3(p_lines))
-        a    = int(180 * ease_out3(p_lines))
-        d.rectangle([0, ly, lx, ly+lw_], fill=(*C_GOLD, a))
+    # Very subtle center glow — deep blue, not gold
+    for r in range(6, 0, -1):
+        radius = 200 + r * 50
+        a      = int(12 * r / 6)
+        ov     = Image.new("RGBA", img.size, (0,0,0,0))
+        od     = ImageDraw.Draw(ov)
+        od.ellipse([W//2-radius, H//2-radius-80,
+                    W//2+radius, H//2+radius-80], fill=(20, 40, 100, a))
+        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+        d   = ImageDraw.Draw(img)
 
-    # Central glow
-    p_glow = progress(t, 0.1, 0.8)
-    img = glow_ellipse(img, W//2, H//2-60, int(300*ease_out3(p_glow)),
-                       int(200*ease_out3(p_glow)), C_GOLD, layers=8)
-    d = ImageDraw.Draw(img)
+    # Thin gold border lines top + bottom
+    d.rectangle([0, 0, W, 3], fill=C_GOLD)
+    d.rectangle([0, H-3, W, H], fill=C_GOLD)
 
-    # "WHAT IF YOU HAD" — slides up
-    p_q = progress(t, 0.2, 0.9)
-    eq  = ease_out3(p_q)
-    qf  = font(44)
-    q1  = "WHAT IF YOU HAD"
-    q1y = int(H//2 - 280 + 40*(1-eq))
-    d.text((cx(d,q1,qf), q1y), q1, font=qf, fill=(*C_MUTED, int(255*eq)))
+    # "IF YOU HAD INVESTED" — fades up
+    p1  = ease_out3(progress(t, 0.0, 0.7))
+    tf  = font(40)
+    t1  = "IF YOU HAD INVESTED"
+    t1y = int(H//2 - 300 + 30*(1-p1))
+    d.text((cx(d, t1, tf), t1y), t1, font=tf, fill=(*C_MUTED, int(220*p1)))
 
-    # "INVESTED Rs 1 LAKH" — zooms in
-    p_inv = progress(t, 0.3, 1.0)
-    ei    = ease_out5(p_inv)
-    inv_size = int(lerp(30, 72, ei))
-    invf  = font(inv_size, bold=True)
-    inv_t = "INVESTED Rs 1 LAKH"
-    inv_y = int(H//2 - 180 + 30*(1-ei))
-    d.text((cx(d,inv_t,invf), inv_y), inv_t, font=invf,
-           fill=(*C_GOLD, int(255*ei)))
+    # "Rs 1 LAKH" — gold, medium
+    p2  = ease_out3(progress(t, 0.15, 0.85))
+    rf  = font(76, bold=True)
+    r1  = "Rs 1 LAKH"
+    r1y = int(H//2 - 200 + 25*(1-p2))
+    d.text((cx(d, r1, rf), r1y), r1, font=rf, fill=(*C_GOLD, int(255*p2)))
 
-    # Stock name — big zoom
-    p_name = progress(t, 0.5, 1.2)
-    en     = ease_out5(clamp(p_name))
-    ns     = int(lerp(40, 110, en))
-    nf_    = font(ns, bold=True)
-    name_y = int(H//2 - 40 + 50*(1-en))
-    # Glow behind name
-    if en > 0.3:
-        img = glow_ellipse(img, W//2, name_y+ns//2,
-                           int(tw(d,name,nf_)//2 + 60),
-                           int(ns//2 + 30),
-                           C_GOLD, layers=5)
-        d = ImageDraw.Draw(img)
-    d.text((cx(d,name,nf_), name_y), name, font=nf_,
-           fill=(*C_WHITE, int(255*en)))
+    # Thin divider line grows from center
+    p3  = ease_out3(progress(t, 0.3, 0.9))
+    dw  = int((W - 160) * p3)
+    d.rectangle([W//2 - dw//2, H//2 - 100,
+                 W//2 + dw//2, H//2 - 98], fill=(*C_GOLD, 160))
 
-    # "X YEARS AGO" — fades in
-    p_yr = progress(t, 0.8, 1.5)
-    yr_s = f"{int(years)} YEARS AGO" if years >= 1 else f"{int(years*12)} MONTHS AGO"
-    yrf  = font(40)
-    yr_y = int(H//2 + 100 + 20*(1-ease_out3(p_yr)))
-    d.text((cx(d,yr_s,yrf), yr_y), yr_s, font=yrf,
-           fill=(*C_MUTED, int(255*ease_out3(p_yr))))
+    # Stock name — clean white, auto-sized, no glow
+    p4  = ease_out5(progress(t, 0.4, 1.1))
+    for ns in [104, 88, 74, 62, 52]:
+        nf_ = font(ns, bold=True)
+        if tw(d, name, nf_) <= W - 80:
+            break
+    ny  = int(H//2 - 60 + 40*(1-p4))
+    d.text((cx(d, name, nf_), ny), name, font=nf_,
+           fill=(*C_WHITE, int(255*p4)))
 
-    # Brand bottom
-    bf = font(32, bold=True)
-    d.text((cx(d,PAGE_NAME,bf), H-100), PAGE_NAME, font=bf, fill=C_GOLD)
-    d.rectangle([0, H-4, W, H], fill=C_GOLD)
+    # "X Years Ago → Today"
+    p5  = ease_out3(progress(t, 0.65, 1.3))
+    yf_ = font(40)
+    yt  = f"{int(years)} Years Ago  →  Today"
+    yy  = int(H//2 + 80 + 20*(1-p5))
+    d.text((cx(d, yt, yf_), yy), yt, font=yf_,
+           fill=(*C_MUTED, int(220*p5)))
+
+    # Brand
+    p6  = ease_out3(progress(t, 0.9, 1.6))
+    bf  = font(34, bold=True)
+    d.text((cx(d, PAGE_NAME, bf), H-90), PAGE_NAME, font=bf,
+           fill=(*C_GOLD, int(255*p6)))
 
     return np.array(img)
+
 
 
 def frame_chart(t, data, cache, total=11.0):
@@ -359,7 +335,7 @@ def frame_chart(t, data, cache, total=11.0):
     d.rectangle([80, 168, W-80, 170], fill=(*C_GOLD, 80))
 
     # Chart with zoom effect
-    key = int(reveal * 60)
+    key = int(reveal * 200)  # fine-grained cache for smooth animation
     if key not in cache:
         cache[key] = make_chart(data, reveal=reveal)
 
@@ -558,49 +534,68 @@ def frame_result(t, data, total=5.0):
 def frame_outro(t, total=2.0):
     """19-21s: Clean cinematic outro."""
     img = make_canvas()
-    img = add_grid(img, alpha=8)
-    img = glow_ellipse(img, W//2, H//2-80, 320, 260, C_GOLD, layers=8)
     d   = ImageDraw.Draw(img)
 
-    # Gold lines sweep
-    p_l = progress(t, 0.0, 0.5)
-    for i, ly in enumerate([H//2-280, H//2+200]):
-        lx = int(W * ease_out3(p_l))
-        d.rectangle([0, ly, lx, ly+2], fill=(*C_GOLD, 160))
+    # Subtle center glow
+    for r in range(5, 0, -1):
+        radius = 200 + r*50
+        a      = int(15*r/5)
+        ov     = Image.new("RGBA", img.size, (0,0,0,0))
+        od     = ImageDraw.Draw(ov)
+        od.ellipse([W//2-radius, H//2-radius-80,
+                    W//2+radius, H//2+radius-80], fill=(*C_GOLD, a))
+        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+        d   = ImageDraw.Draw(img)
 
-    # Brand name zoom
-    p_b = progress(t, 0.1, 0.8)
-    eb  = ease_out5(p_b)
-    bs  = int(lerp(30, 100, eb))
-    bf  = font(bs, bold=True)
-    bw_ = tw(d, PAGE_NAME, bf)
-    d.text((W//2-bw_//2, H//2-200), PAGE_NAME, font=bf, fill=C_GOLD)
+    d.rectangle([0, 0, W, 3], fill=C_GOLD)
+    d.rectangle([0, H-3, W, H], fill=C_GOLD)
+
+    # Brand name — fixed size, always fits
+    p_b = ease_out5(progress(t, 0.1, 0.8))
+    bf  = font(88, bold=True)
+    # Auto-shrink if needed
+    for bs in [88, 76, 64, 54]:
+        bf = font(bs, bold=True)
+        if tw(d, PAGE_NAME, bf) <= W - 80:
+            break
+    by_ = int(H//2 - 220 + 30*(1-p_b))
+    d.text((cx(d, PAGE_NAME, bf), by_), PAGE_NAME, font=bf,
+           fill=(*C_GOLD, int(255*p_b)))
 
     # Handle
-    p_h = progress(t, 0.4, 1.0)
-    hf  = font(int(lerp(20,38,ease_out3(p_h))))
-    d.text((cx(d,PAGE_HANDLE,hf), H//2-80),
-           PAGE_HANDLE, font=hf, fill=C_MUTED)
+    p_h = ease_out3(progress(t, 0.35, 1.0))
+    hf  = font(38)
+    d.text((cx(d, PAGE_HANDLE, hf), H//2-100),
+           PAGE_HANDLE, font=hf, fill=(*C_MUTED, int(220*p_h)))
 
-    # CTA lines
-    p_c = progress(t, 0.6, 1.2)
-    for i, line in enumerate(["Follow for daily stock","investment insights!"]):
-        cf = font(int(lerp(20,46,ease_out3(p_c))))
-        d.text((cx(d,line,cf), H//2+20+i*64), line, font=cf, fill=C_WHITE)
+    # Divider
+    p_div = ease_out3(progress(t, 0.4, 0.9))
+    dw    = int((W-160)*p_div)
+    d.rectangle([W//2-dw//2, H//2-50, W//2+dw//2, H//2-48],
+                fill=(*C_GOLD, 140))
+
+    # CTA
+    p_c = ease_out3(progress(t, 0.5, 1.2))
+    for i, line in enumerate(["Follow for daily stock", "investment insights!"]):
+        cf = font(46)
+        cy_ = int(H//2 + 10 + i*64 + 20*(1-p_c))
+        d.text((cx(d, line, cf), cy_), line, font=cf,
+               fill=(*C_WHITE, int(255*p_c)))
 
     # Subscribe button
-    p_s = progress(t, 1.0, 1.6)
+    p_s = progress(t, 0.9, 1.6)
     if p_s > 0:
-        se  = spring(p_s)
+        se   = clamp(spring(p_s))
         bw_, bh_ = 360, 76
-        bx  = W//2-bw_//2
-        by  = H//2+200
+        bx   = W//2 - bw_//2
+        by   = H//2 + 180
         d.rounded_rectangle([bx, by, bx+bw_, by+bh_], radius=38, fill=C_RED)
-        sf_ = font(int(lerp(20,40,clamp(se))), bold=True)
-        d.text((bx+(bw_-tw(d,"SUBSCRIBE",sf_))//2, by+(bh_-th(d,"SUBSCRIBE",sf_))//2),
-               "SUBSCRIBE", font=sf_, fill=C_WHITE)
+        sf_  = font(40, bold=True)
+        sub  = "SUBSCRIBE"
+        d.text((bx + (bw_-tw(d,sub,sf_))//2,
+                by + (bh_-th(d,sub,sf_))//2),
+               sub, font=sf_, fill=C_WHITE)
 
-    d.rectangle([0, H-4, W, H], fill=C_GOLD)
     return np.array(img)
 
 # ── Thumbnail ──────────────────────────────────────────────────
