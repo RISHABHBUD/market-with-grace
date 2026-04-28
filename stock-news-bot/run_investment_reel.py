@@ -5,6 +5,7 @@ posts to Instagram + uploads to YouTube Shorts.
 """
 
 import os, sys, re
+import argparse
 from datetime import datetime
 
 from nifty500         import get_todays_stock
@@ -16,6 +17,14 @@ from config           import OUTPUT_FOLDER
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Run investment reel automation.")
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Generate reel locally and skip all social posting/upload steps.",
+    )
+    args = parser.parse_args()
+
     print(f"\n💰 Investment Reel — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     print("=" * 60)
 
@@ -36,6 +45,14 @@ def main():
     if not success:
         print("  [!] Reel generation failed. Exiting.")
         sys.exit(1)
+
+    if args.local_only:
+        print("\n[3/4] Local test mode enabled (--local-only)")
+        print(f"  [✓] Reel saved: {reel_path}")
+        print(f"  [✓] Thumbnail saved: {thumb_path}")
+        print("  [i] Skipped Instagram, Facebook, and YouTube publishing.")
+        print(f"\n✅ Local test done! Files are in: {out_dir}\n")
+        return
 
     # 3. Post to Instagram
     print("\n[3/4] Posting to Instagram...")

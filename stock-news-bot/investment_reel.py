@@ -1,760 +1,760 @@
 """
-Investment Reel — StockDev.in
-Premium cinematic design. Concept: Rs 1 Lakh growth story.
-
-Timeline:
-  0-3s  : Dramatic intro — stock name reveal with cinematic zoom
-  3-14s : Premium chart animation with smooth line draw
-  14-19s: Result reveal — big number impact moment
-  19-21s: Outro
+Investment Reel v2 - Neon cinematic redesign.
+Concept unchanged: Rs 1 lakh invested over ~10 years, but with
+an entirely fresh visual language and motion style.
 """
 
-import os, re, random, math
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageChops
-from moviepy import VideoClip, AudioFileClip, concatenate_videoclips
-import yfinance as yf
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patheffects as pe
-from io import BytesIO
+import math
+import os
+import random
 from datetime import datetime, timedelta
-from config import PAGE_NAME, PAGE_HANDLE
+from io import BytesIO
+
+import matplotlib
+import matplotlib.dates as mdates
+import matplotlib.pyplot as plt
+import numpy as np
+import yfinance as yf
+from matplotlib.collections import LineCollection
+from moviepy import AudioFileClip, CompositeAudioClip, VideoClip, concatenate_videoclips
+from moviepy.audio.AudioClip import AudioArrayClip
+from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+
+from config import PAGE_HANDLE, PAGE_NAME
+
+matplotlib.use("Agg")
 
 W, H, FPS = 1080, 1920, 30
-MUSIC_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
+MUSIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "music")
 
-# ── Premium palette — deep space + gold ───────────────────────
-C_BG1    = ( 4,   4,  12)   # near black
-C_BG2    = ( 8,  10,  28)   # deep navy
-C_BG3    = (12,  16,  44)   # card bg
-C_GOLD   = (212, 175,  55)   # real gold
-C_GOLD2  = (255, 215,   0)   # bright gold
-C_WHITE  = (240, 240, 255)   # warm white
-C_MUTED  = ( 90, 100, 130)   # muted blue-grey
-C_GREEN  = ( 0,  230, 118)   # vivid green
-C_RED    = (255,  60,  80)   # vivid red
-C_ACCENT = ( 99, 102, 241)   # indigo accent
-C_GLOW_G = ( 0,  255, 120)   # green glow
-C_GLOW_R = (255,  50,  70)   # red glow
+# New palette: deep midnight + neon accents.
+C_BG_TOP = (9, 8, 30)
+C_BG_BOT = (22, 12, 52)
+C_PANEL = (22, 28, 58)
+C_TEXT = (236, 239, 255)
+C_MUTED = (142, 153, 196)
+C_CYAN = (32, 224, 255)
+C_VIOLET = (154, 106, 255)
+C_GOLD = (255, 210, 92)
+C_GREEN = (0, 243, 146)
+C_RED = (255, 80, 122)
+EFFECT_INTENSITY = 1.0
 
-# ── Easing functions ───────────────────────────────────────────
-def clamp(v, lo=0.0, hi=1.0): return max(lo, min(hi, v))
-def ease_out3(t):  t=clamp(t); return 1-(1-t)**3
-def ease_out5(t):  t=clamp(t); return 1-(1-t)**5
-def ease_in2(t):   t=clamp(t); return t*t
-def ease_io(t):    t=clamp(t); return t*t*(3-2*t)
-def spring(t, s=8, d=0.5):
-    t=clamp(t)
-    if t==0: return 0
-    if t==1: return 1
-    return 1 + (2.718**(-d*s*t)) * math.cos(s*t*1.5)
+
+def clamp(v, lo=0.0, hi=1.0):
+    return max(lo, min(hi, v))
+
+
 def progress(t, start, end):
-    return clamp((t-start)/(end-start)) if end>start else float(t>=start)
+    return clamp((t - start) / (end - start)) if end > start else float(t >= start)
 
-def lerp(a, b, t): return a + (b-a)*clamp(t)
+
+def ease_out3(t):
+    t = clamp(t)
+    return 1 - (1 - t) ** 3
+
+
+def ease_out5(t):
+    t = clamp(t)
+    return 1 - (1 - t) ** 5
+
+
+def ease_in2(t):
+    t = clamp(t)
+    return t * t
+
+
+def ease_io(t):
+    t = clamp(t)
+    return t * t * (3 - 2 * t)
+
+
+def spring(t, s=9.0, d=0.5):
+    t = clamp(t)
+    if t in (0, 1):
+        return t
+    return 1 + math.exp(-d * s * t) * math.cos(s * t * 1.55)
+
+
+def lerp(a, b, t):
+    return a + (b - a) * clamp(t)
+
+
 def lerp_col(c1, c2, t):
     return tuple(int(lerp(c1[i], c2[i], t)) for i in range(3))
 
-# ── Font helper ────────────────────────────────────────────────
+
 def font(size, bold=False):
-    for p in (["arialbd.ttf","Arial_Bold.ttf","DejaVuSans-Bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-               if bold else
-               ["arial.ttf","Arial.ttf","DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]):
-        try: return ImageFont.truetype(p, size)
-        except: pass
+    candidates = (
+        ["arialbd.ttf", "Arial_Bold.ttf", "DejaVuSans-Bold.ttf"]
+        if bold
+        else ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf"]
+    )
+    candidates += [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        if bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+    ]
+    for p in candidates:
+        try:
+            return ImageFont.truetype(p, size)
+        except Exception:
+            pass
     return ImageFont.load_default()
 
+
 def tw(d, txt, f):
-    b = d.textbbox((0,0), txt, font=f); return b[2]-b[0]
+    b = d.textbbox((0, 0), txt, font=f)
+    return b[2] - b[0]
+
+
 def th(d, txt, f):
-    b = d.textbbox((0,0), txt, font=f); return b[3]-b[1]
-def cx(d, txt, f, w=W): return (w - tw(d,txt,f))//2
+    b = d.textbbox((0, 0), txt, font=f)
+    return b[3] - b[1]
 
-# ── Canvas helpers ─────────────────────────────────────────────
-def make_canvas():
-    """Create base gradient canvas."""
-    arr = np.zeros((H, W, 3), dtype=np.uint8)
-    for y in range(H):
-        t = y/H
-        arr[y] = lerp_col(C_BG1, C_BG2, t)
-    return Image.fromarray(arr)
 
-def add_grid(img, alpha=18):
-    """Subtle grid lines for depth."""
-    d = ImageDraw.Draw(img)
-    for x in range(0, W, 90):
-        d.line([(x,0),(x,H)], fill=(*C_BG3, alpha), width=1)
-    for y in range(0, H, 90):
-        d.line([(0,y),(W,y)], fill=(*C_BG3, alpha), width=1)
-    return img
+def cx(d, txt, f, w=W):
+    return (w - tw(d, txt, f)) // 2
 
-def glow_ellipse(img, cx_, cy_, rx, ry, color, layers=6):
-    """Draw a soft glowing ellipse."""
-    for i in range(layers, 0, -1):
-        r_  = int(rx + (layers-i)*18)
-        ry_ = int(ry + (layers-i)*18)
-        a   = int(255 * (i/layers) * 0.12)
-        ov  = Image.new("RGBA", img.size, (0,0,0,0))
-        od  = ImageDraw.Draw(ov)
-        od.ellipse([cx_-r_, cy_-ry_, cx_+r_, cy_+ry_], fill=(*color, a))
-        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-    return img
-
-def draw_glow_text(d, img, txt, f, x, y, color, glow_color, glow_r=4):
-    """Text with soft glow."""
-    ov = Image.new("RGBA", img.size, (0,0,0,0))
-    od = ImageDraw.Draw(ov)
-    for r in range(glow_r, 0, -1):
-        a = int(80 * r / glow_r)
-        for dx in range(-r, r+1, max(1,r//2)):
-            for dy in range(-r, r+1, max(1,r//2)):
-                od.text((x+dx, y+dy), txt, font=f, fill=(*glow_color, a))
-    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-    d2  = ImageDraw.Draw(img)
-    d2.text((x, y), txt, font=f, fill=color)
-    return img, d2
-
-def fmt_money(v):
-    if v >= 1e7:  return f"₹{v/1e7:.2f} Cr"
-    if v >= 1e5:  return f"₹{v/1e5:.2f} L"
-    return f"₹{v:,.0f}"
 
 def fmt_money_ascii(v):
-    if v >= 1e7:  return f"Rs {v/1e7:.2f} Cr"
-    if v >= 1e5:  return f"Rs {v/1e5:.2f} L"
+    if v >= 1e7:
+        return f"Rs {v / 1e7:.2f} Cr"
+    if v >= 1e5:
+        return f"Rs {v / 1e5:.2f} L"
     return f"Rs {v:,.0f}"
 
-# ── Data ───────────────────────────────────────────────────────
+
+def make_base_canvas(t=0.0, tint=None):
+    arr = np.zeros((H, W, 3), dtype=np.uint8)
+    for y in range(H):
+        arr[y] = lerp_col(C_BG_TOP, C_BG_BOT, y / H)
+    img = Image.fromarray(arr)
+    d = ImageDraw.Draw(img)
+
+    # Diagonal light sweeps.
+    for i in range(6):
+        x = int((W * 0.18 * i + (t * 130) % (W * 1.2)) - W * 0.2)
+        d.polygon(
+            [(x, 0), (x + 120, 0), (x - 260, H), (x - 380, H)],
+            fill=(40, 30, 82, 36),
+        )
+
+    # Grain for cinematic texture.
+    rng = np.random.default_rng(int(t * 1000) + 99)
+    noise = rng.integers(0, 22, size=(H, W), dtype=np.uint8)
+    layer = Image.fromarray(noise, mode="L").convert("RGB")
+    img = ImageChops.screen(img, layer)
+
+    # Optional directional tint.
+    if tint:
+        ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        od = ImageDraw.Draw(ov)
+        for r in range(8, 0, -1):
+            rad = 210 + r * 70
+            alpha = int(20 * (r / 8))
+            od.ellipse([W - rad - 60, 80 - rad, W + rad - 60, 80 + rad], fill=(*tint, alpha))
+        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+
+    return img
+
+
+def draw_hud_grid(img, t, alpha=36):
+    d = ImageDraw.Draw(img)
+    step = 120
+    x_shift = int((t * 40) % step)
+    y_shift = int((t * 26) % step)
+    for x in range(-step, W + step, step):
+        d.line([(x + x_shift, 0), (x + x_shift, H)], fill=(70, 86, 145, alpha), width=1)
+    for y in range(-step, H + step, step):
+        d.line([(0, y + y_shift), (W, y + y_shift)], fill=(70, 86, 145, alpha), width=1)
+    return img
+
+
+def draw_soft_glow(img, x, y, radius, color):
+    ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    for r in range(7, 0, -1):
+        rr = radius + (7 - r) * 24
+        aa = int(80 * r / 7)
+        od.ellipse([x - rr, y - rr, x + rr, y + rr], fill=(*color, aa))
+    return Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+
+
+def draw_glow_text(img, txt, f, x, y, color, glow):
+    ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    for r in [8, 5, 3]:
+        od.text((x, y), txt, font=f, fill=(*glow, 85 // max(1, r // 2)))
+    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+    d = ImageDraw.Draw(img)
+    d.text((x, y), txt, font=f, fill=color)
+    return img
+
+
+def draw_cracker_burst(img, cx0, cy0, t, duration, color, seed=1, intensity=80):
+    """Firecracker-style radial particles."""
+    p = progress(t, 0.0, duration)
+    if p <= 0:
+        return img
+    rng = random.Random(seed)
+    ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    scaled = max(6, int(intensity * (0.75 + 0.55 * EFFECT_INTENSITY)))
+    for _ in range(scaled):
+        ang = rng.uniform(0, math.tau)
+        max_dist = rng.uniform(90, 420)
+        dist = max_dist * ease_out3(p)
+        px = int(cx0 + math.cos(ang) * dist)
+        py = int(cy0 + math.sin(ang) * dist * 0.75)
+        r = rng.randint(2, 7)
+        alpha = int(255 * (1 - p) * rng.uniform(0.45, 1.0))
+        col = color if rng.random() > 0.35 else C_GOLD
+        od.ellipse([px - r, py - r, px + r, py + r], fill=(*col, alpha))
+        if rng.random() > 0.82:
+            # Spark streaks.
+            sx = int(px + math.cos(ang) * rng.uniform(10, 26))
+            sy = int(py + math.sin(ang) * rng.uniform(10, 26))
+            od.line([(px, py), (sx, sy)], fill=(*col, alpha), width=2)
+    return Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+
+
+def draw_bubble_field(img, box, t, color, seed=11, count=16):
+    """Floating bubble particles for celebratory card moments."""
+    x1, y1, x2, y2 = box
+    rng = random.Random(seed)
+    ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(ov)
+    scaled_count = max(4, int(count * (0.8 + 0.5 * EFFECT_INTENSITY)))
+    for i in range(scaled_count):
+        bx = rng.uniform(x1 - 20, x2 + 20)
+        phase = (t * rng.uniform(0.6, 1.4) + rng.uniform(0, 1)) % 1.0
+        by = y2 + 20 - (y2 - y1 + 80) * phase
+        rr = rng.uniform(5, 16)
+        a = int(130 * (1 - phase) * rng.uniform(0.5, 1.0))
+        od.ellipse([bx - rr, by - rr, bx + rr, by + rr], outline=(*color, a), width=2)
+    return Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+
+
+def add_subtle_vignette(img, strength=0.10):
+    """Darken edges slightly to focus viewer attention near center."""
+    arr = np.asarray(img).astype(np.float32)
+    yy, xx = np.indices((arr.shape[0], arr.shape[1]))
+    cx0 = arr.shape[1] / 2.0
+    cy0 = arr.shape[0] / 2.0
+    dx = (xx - cx0) / (arr.shape[1] / 2.0)
+    dy = (yy - cy0) / (arr.shape[0] / 2.0)
+    r = np.sqrt(dx * dx + dy * dy)
+    # 0 near center, 1 near edges/corners.
+    edge = np.clip((r - 0.22) / 0.95, 0.0, 1.0)
+    mask = 1.0 - (strength * edge * edge)
+    arr = arr * mask[..., None]
+    return Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8), mode="RGB")
+
+
+def detect_music_bpm(audio_clip, duration_limit=45, sample_rate=11025):
+    """Estimate BPM via envelope autocorrelation."""
+    try:
+        sample_dur = min(float(audio_clip.duration), float(duration_limit))
+        if sample_dur < 5:
+            return 120
+        arr = audio_clip.subclipped(0, sample_dur).to_soundarray(fps=sample_rate)
+        mono = arr.mean(axis=1) if arr.ndim > 1 else arr
+        env = np.abs(mono)
+        # Smooth envelope to emphasize beats.
+        win = max(16, int(sample_rate * 0.045))
+        kernel = np.ones(win, dtype=np.float32) / win
+        env = np.convolve(env, kernel, mode="same")
+        env = env - np.mean(env)
+        if np.allclose(env.std(), 0):
+            return 120
+
+        ac = np.correlate(env, env, mode="full")
+        ac = ac[len(ac) // 2 :]
+        min_bpm, max_bpm = 72, 170
+        min_lag = int(sample_rate * 60 / max_bpm)
+        max_lag = int(sample_rate * 60 / min_bpm)
+        if max_lag >= len(ac):
+            max_lag = len(ac) - 1
+        if min_lag >= max_lag:
+            return 120
+        segment = ac[min_lag:max_lag]
+        best = int(np.argmax(segment)) + min_lag
+        bpm = 60 * sample_rate / max(1, best)
+        bpm = int(round(clamp(bpm / 200, 0.35, 0.95) * 200))
+        return max(min_bpm, min(max_bpm, bpm))
+    except Exception:
+        return 120
+
+
+def make_micro_sfx(duration, bpm, milestone_times=None, sample_rate=44100):
+    """Create subtle cinematic SFX layer (no beat ticks)."""
+    n = int(duration * sample_rate)
+    sig = np.zeros(n, dtype=np.float32)
+
+    def add_click(t0, amp=0.028, freq=1150, length=0.08):
+        i0 = int(t0 * sample_rate)
+        i1 = min(n, i0 + int(length * sample_rate))
+        if i0 >= n or i1 <= i0:
+            return
+        tt = np.arange(i1 - i0) / sample_rate
+        env = np.exp(-tt * 38)
+        tone = np.sin(2 * math.pi * freq * tt) + 0.45 * np.sin(2 * math.pi * freq * 1.6 * tt)
+        sig[i0:i1] += amp * tone * env
+
+    def add_noise_burst(t0, amp=0.038, length=0.16):
+        i0 = int(t0 * sample_rate)
+        i1 = min(n, i0 + int(length * sample_rate))
+        if i0 >= n or i1 <= i0:
+            return
+        tt = np.arange(i1 - i0) / sample_rate
+        env = np.exp(-tt * 24)
+        noise = np.random.default_rng(i0 + 91).normal(0, 1, size=i1 - i0).astype(np.float32)
+        sig[i0:i1] += amp * noise * env
+
+    # Only milestone sparkle bursts + very light section whooshes.
+    for t0 in [2.9, 13.9, 20.9]:
+        add_noise_burst(t0, amp=0.02, length=0.20)
+        add_click(t0 + 0.03, amp=0.015, freq=1200, length=0.07)
+
+    for mt in milestone_times or []:
+        add_noise_burst(mt, amp=0.026)
+        add_click(mt + 0.03, amp=0.016, freq=1500, length=0.05)
+
+    sig = np.clip(sig, -0.16, 0.16)
+    stereo = np.stack([sig, sig], axis=1)
+    return AudioArrayClip(stereo, fps=sample_rate)
+
+
 def fetch_data(ticker, years=10):
-    for sym in [ticker, ticker.replace(".NS",".BO")]:
+    for sym in [ticker, ticker.replace(".NS", ".BO")]:
         try:
             hist = yf.Ticker(sym).history(period="max")
-            if hist.empty or len(hist) < 100: continue
-            cutoff = datetime.now() - timedelta(days=years*365)
+            if hist.empty or len(hist) < 100:
+                continue
+            cutoff = datetime.now() - timedelta(days=years * 365)
             h2 = hist[hist.index >= cutoff.strftime("%Y-%m-%d")]
-            if len(h2) < 50: h2 = hist
-            if h2.empty: continue
-            sp  = h2["Close"].iloc[0]
+            if len(h2) < 50:
+                h2 = hist
+            if h2.empty:
+                continue
+            sp = h2["Close"].iloc[0]
             inv = 100000
-            vals = [(d, (r["Close"]/sp)*inv) for d,r in h2.iterrows()]
+            vals = [(d, (r["Close"] / sp) * inv) for d, r in h2.iterrows()]
             sd, ed = h2.index[0], h2.index[-1]
             ev = vals[-1][1]
-            cagr = ((ev/inv)**(1/max((ed-sd).days/365,1))-1)*100
-            return dict(sym=sym, vals=vals, sp=sp, ep=h2["Close"].iloc[-1],
-                        sd=sd, ed=ed, inv=inv, ev=ev, cagr=cagr,
-                        yrs=(ed-sd).days/365)
+            cagr = ((ev / inv) ** (1 / max((ed - sd).days / 365, 1)) - 1) * 100
+            return {
+                "sym": sym,
+                "vals": vals,
+                "sp": sp,
+                "ep": h2["Close"].iloc[-1],
+                "sd": sd,
+                "ed": ed,
+                "inv": inv,
+                "ev": ev,
+                "cagr": cagr,
+                "yrs": (ed - sd).days / 365,
+            }
         except Exception as e:
             print(f"  [!] {sym}: {e}")
     return None
 
+
 def milestones(inv, ev):
-    return [m for m in [2,3,5,10,20,50] if ev >= inv*m]
+    return [m for m in [2, 3, 5, 10, 15, 20, 30, 50] if ev >= inv * m]
 
 
-# ── Premium chart ──────────────────────────────────────────────
-def make_chart(data, reveal=1.0, w=1080, h=900, cur_val=None):
-    """Full-width chart that always fills the entire figure."""
-    vals   = data["vals"]
-    n      = max(2, int(len(vals)*reveal))
-    shown  = vals[:n]
-    dates  = [v[0] for v in shown]
+def make_chart(data, reveal=1.0, w=980, h=900):
+    vals = data["vals"]
+    n = max(2, int(len(vals) * reveal))
+    shown = vals[:n]
+    all_d = [v[0] for v in vals]
+    all_p = [v[1] for v in vals]
+    dates = [v[0] for v in shown]
     prices = [v[1] for v in shown]
-    all_d  = [v[0] for v in vals]
-    all_p  = [v[1] for v in vals]
-    inv    = data["inv"]
 
-    # Color based on current tip value (not final value)
-    tip_val = prices[-1] if prices else inv
-    is_up   = tip_val >= inv
-    lc  = "#00E676" if is_up else "#FF3D57"
-    gc  = "#00FF88" if is_up else "#FF2040"
-    fc  = "#003320" if is_up else "#330010"
+    inv = data["inv"]
+    up = prices[-1] >= inv
+    accent = np.array([0 / 255, 243 / 255, 146 / 255]) if up else np.array([1.0, 80 / 255, 122 / 255])
 
-    fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=100)
-    fig.patch.set_facecolor("#04040C")
-    ax.set_facecolor("#06060F")
-
-    # ALWAYS use full x and y range — chart never shrinks
+    fig, ax = plt.subplots(figsize=(w / 100, h / 100), dpi=100)
+    fig.patch.set_facecolor("#0A0B1D")
+    ax.set_facecolor("#111530")
     ax.set_xlim(all_d[0], all_d[-1])
-    ymin = min(all_p) * 0.85
-    ymax = max(all_p) * 1.12
-    ax.set_ylim(ymin, ymax)
+    ax.set_ylim(min(all_p) * 0.84, max(all_p) * 1.1)
 
-    if len(dates) > 1:
-        for lw, a in [(16,0.04),(10,0.10),(5,0.28),(2.5,1.0)]:
-            ax.plot(dates, prices, color=lc, linewidth=lw,
-                    alpha=a, solid_capstyle="round", zorder=4)
-        ax.fill_between(dates, prices, ymin, color=fc, alpha=0.55, zorder=2)
-        ax.fill_between(dates, prices, ymin, color=lc, alpha=0.07, zorder=3)
+    x = mdates.date2num(dates)
+    y = np.array(prices)
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segs = np.concatenate([points[:-1], points[1:]], axis=1) if len(points) > 1 else None
 
-    # Reference line at Rs 1 lakh
-    ax.axhline(y=inv, color="#FFFFFF", lw=1.5, ls="--", alpha=0.25, zorder=1)
+    if segs is not None:
+        colors = []
+        for i in range(len(segs)):
+            t = i / max(1, len(segs) - 1)
+            c = accent * (0.5 + 0.5 * t) + np.array([0.25, 0.25, 0.45]) * (1 - t)
+            colors.append((*c, 1.0))
+        lc = LineCollection(segs, colors=colors, linewidths=4.8, capstyle="round", zorder=6)
+        ax.add_collection(lc)
+        for lw, alpha in [(20, 0.05), (12, 0.08), (7, 0.13)]:
+            ax.plot(dates, prices, lw=lw, color=tuple(accent), alpha=alpha, solid_capstyle="round", zorder=5)
 
-    # Milestone dotted lines
+        ax.fill_between(dates, prices, min(all_p) * 0.84, color=tuple(accent), alpha=0.12, zorder=2)
+
+    ax.axhline(y=inv, color="#FFFFFF", lw=1.2, ls="--", alpha=0.22, zorder=1)
     for m in milestones(inv, data["ev"]):
         target = inv * m
-        for i,(d,v) in enumerate(vals):
-            if v >= target and i < n:
-                ax.axhline(y=target, color=gc, lw=0.8, ls=":", alpha=0.3)
-                break
+        if target <= max(prices):
+            ax.axhline(y=target, color="#FFFFFF", lw=0.8, ls=":", alpha=0.12, zorder=1)
 
-    # Rupee symbol at chart tip instead of plain dot
-    if len(dates) > 1:
-        tip_x, tip_y = dates[-1], prices[-1]
-        # Glow rings
-        for s, a in [(400,0.04),(200,0.10),(80,0.25)]:
-            ax.scatter([tip_x], [tip_y], color=gc, s=s, alpha=a, zorder=5)
-        # Rs label in a circle at tip
-        ax.annotate("Rs", xy=(tip_x, tip_y),
-                    fontsize=14, fontweight="bold",
-                    ha="center", va="center", zorder=7,
-                    color="#04040C",
-                    bbox=dict(boxstyle="circle,pad=0.3", fc=gc, ec="none", alpha=0.9))
+    tip_x, tip_y = dates[-1], prices[-1]
+    # Premium tip tracker: glow ring + white core + small Rs badge.
+    ax.scatter([tip_x], [tip_y], s=760, color=tuple(accent), alpha=0.12, zorder=6)
+    ax.scatter([tip_x], [tip_y], s=300, color=tuple(accent), alpha=0.26, zorder=7)
+    ax.scatter([tip_x], [tip_y], s=98, color="#F4F8FF", edgecolors=tuple(accent), linewidths=2.2, zorder=8)
+    ax.annotate(
+        "Rs",
+        xy=(tip_x, tip_y),
+        xytext=(12, -16),
+        textcoords="offset points",
+        fontsize=9,
+        fontweight="bold",
+        ha="center",
+        va="center",
+        color="#0E1230",
+        bbox=dict(boxstyle="round,pad=0.22", fc="#DFFBFF", ec="none", alpha=0.95),
+        zorder=9,
+    )
 
-    ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_color("#1A1A3A"); ax.spines["bottom"].set_color("#1A1A3A")
-    ax.tick_params(colors="#C0C8E0", labelsize=11, length=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color("#3B4372")
+    ax.spines["bottom"].set_color("#3B4372")
+    ax.tick_params(colors="#C7D1FF", labelsize=11, length=0)
+    ax.grid(axis="y", color="#2A3158", lw=0.7, alpha=0.55)
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
 
-    def fv(v, _):
-        if v >= 1e7: return f"Rs{v/1e7:.0f}Cr"
-        if v >= 1e5: return f"Rs{v/1e5:.0f}L"
+    def _fmt(v, _):
+        if v >= 1e7:
+            return f"Rs{v/1e7:.0f}Cr"
+        if v >= 1e5:
+            return f"Rs{v/1e5:.0f}L"
         return f"Rs{v:,.0f}"
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(fv))
-    ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%Y"))
-    ax.grid(axis="y", color="#0C0C20", lw=0.8, zorder=0)
 
-    # NO bbox_inches="tight" — use fixed size so chart always fills frame
-    plt.subplots_adjust(left=0.12, right=0.98, top=0.97, bottom=0.08)
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(_fmt))
+    plt.subplots_adjust(left=0.13, right=0.98, top=0.96, bottom=0.09)
     buf = BytesIO()
-    plt.savefig(buf, format="png", facecolor="#04040C", dpi=100)
-    plt.close(fig); buf.seek(0)
+    plt.savefig(buf, format="png", facecolor="#0A0B1D", dpi=100)
+    plt.close(fig)
+    buf.seek(0)
     return Image.open(buf).convert("RGB")
 
-# ── Section frames ─────────────────────────────────────────────
 
 def frame_intro(t, name, years, total=3.0):
-    """0-3s: Clean aesthetic intro — readable, elegant."""
-    img = make_canvas()
-    d   = ImageDraw.Draw(img)
+    p = ease_out5(progress(t, 0, total))
+    img = make_base_canvas(t, tint=C_VIOLET)
+    img = draw_hud_grid(img, t, alpha=24)
+    d = ImageDraw.Draw(img)
 
-    # Subtle center glow
-    for r in range(5, 0, -1):
-        radius = 180 + r*55
-        a      = int(14*r/5)
-        ov     = Image.new("RGBA", img.size, (0,0,0,0))
-        od     = ImageDraw.Draw(ov)
-        od.ellipse([W//2-radius, H//2-radius-80,
-                    W//2+radius, H//2+radius-80], fill=(20,40,100,a))
-        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-        d   = ImageDraw.Draw(img)
+    # Orbital ring.
+    for i in range(3):
+        rot = int((t * 90 + i * 120) % 360)
+        rad = 220 + i * 48
+        box = [W // 2 - rad, H // 2 - 260 - rad, W // 2 + rad, H // 2 - 260 + rad]
+        d.arc(box, start=rot, end=rot + 250, fill=(*C_CYAN, 150), width=3)
+        d.arc(box, start=rot + 120, end=rot + 300, fill=(*C_VIOLET, 130), width=2)
 
-    d.rectangle([0, 0, W, 3], fill=C_GOLD)
-    d.rectangle([0, H-3, W, H], fill=C_GOLD)
+    # Strong first 1.5s hook.
+    hook_p = progress(t, 0.0, 1.5)
+    if hook_p < 1:
+        band_y = int(186 - 36 * (1 - ease_out3(hook_p)))
+        d.rounded_rectangle([86, band_y, W - 86, band_y + 92], radius=28, fill=(16, 18, 44))
+        d.rectangle([86, band_y, W - 86, band_y + 8], fill=C_CYAN)
+        hook = "CAN Rs 1 LAKH BECOME A FORTUNE?"
+        d.text((cx(d, hook, font(34, True)), band_y + 26), hook, font=font(34, True), fill=C_TEXT)
+        # Beat punch around the hook strip.
+        d.rounded_rectangle([74, band_y - 10, W - 74, band_y + 102], radius=30, outline=(64, 180, 210, 130), width=2)
 
-    # "IF YOU HAD INVESTED" — bright white, not muted
-    p1  = ease_out3(progress(t, 0.0, 0.7))
-    tf  = font(42)
-    t1  = "IF YOU HAD INVESTED"
-    t1y = int(H//2 - 310 + 30*(1-p1))
-    d.text((cx(d,t1,tf), t1y), t1, font=tf,
-           fill=(*C_WHITE, int(230*p1)))
+    f1 = font(38, bold=True)
+    f2 = font(96, bold=True)
+    f3 = font(52, bold=True)
+    f4 = font(34)
 
-    # "Rs 1 LAKH" — gold, bold
-    p2  = ease_out3(progress(t, 0.15, 0.85))
-    rf  = font(80, bold=True)
-    r1  = "Rs 1 LAKH"
-    r1y = int(H//2 - 210 + 25*(1-p2))
-    d.text((cx(d,r1,rf), r1y), r1, font=rf,
-           fill=(*C_GOLD, int(255*p2)))
+    line1 = "IF YOU INVESTED"
+    line2 = "Rs 1 LAKH"
+    line3 = name.upper()
+    line4 = f"{int(years)} YEAR MARKET JOURNEY"
 
-    # Divider
-    p3  = ease_out3(progress(t, 0.3, 0.9))
-    dw  = int((W-160)*p3)
-    d.rectangle([W//2-dw//2, H//2-105, W//2+dw//2, H//2-103],
-                fill=(*C_GOLD, 160))
+    y0 = int(430 - 22 * (1 - p))
+    img = draw_glow_text(img, line1, f1, cx(d, line1, f1), y0, C_TEXT, C_CYAN)
+    img = draw_glow_text(img, line2, f2, cx(d, line2, f2), y0 + 84, C_GOLD, C_GOLD)
+    img = draw_glow_text(img, line3, f3, cx(d, line3, f3), y0 + 238, C_TEXT, C_VIOLET)
+    d = ImageDraw.Draw(img)
+    d.text((cx(d, line4, f4), y0 + 322), line4, font=f4, fill=(*C_MUTED, 220))
 
-    # Stock name — white, large
-    p4  = ease_out5(progress(t, 0.4, 1.1))
-    for ns in [104, 88, 74, 62, 52]:
-        nf_ = font(ns, bold=True)
-        if tw(d, name, nf_) <= W-80: break
-    ny  = int(H//2 - 65 + 40*(1-p4))
-    d.text((cx(d,name,nf_), ny), name, font=nf_,
-           fill=(*C_WHITE, int(255*p4)))
-
-    # "X Years Ago → Today" — highlight the number in gold
-    p5   = ease_out3(progress(t, 0.65, 1.3))
-    yf_  = font(44)
-    yf_b = font(44, bold=True)
-    yr_n = str(int(years))
-    yr_r = " Years Ago  →  Today"
-    # Draw number in gold, rest in white
-    yr_full = yr_n + yr_r
-    yr_y    = int(H//2 + 80 + 20*(1-p5))
-    total_w = tw(d, yr_full, yf_)
-    start_x = (W - total_w) // 2
-    d.text((start_x, yr_y), yr_n, font=yf_b,
-           fill=(*C_GOLD, int(255*p5)))
-    d.text((start_x + tw(d,yr_n,yf_b), yr_y), yr_r, font=yf_,
-           fill=(*C_WHITE, int(230*p5)))
-
-    # Brand
-    p6 = ease_out3(progress(t, 0.9, 1.6))
-    bf = font(34, bold=True)
-    d.text((cx(d,PAGE_NAME,bf), H-90), PAGE_NAME, font=bf,
-           fill=(*C_GOLD, int(255*p6)))
-
+    # Branded footer.
+    d.rounded_rectangle([56, H - 156, W - 56, H - 62], radius=26, fill=(18, 20, 42))
+    d.rectangle([56, H - 156, W - 56, H - 150], fill=C_CYAN)
+    d.text((88, H - 134), PAGE_NAME, font=font(38, bold=True), fill=C_TEXT)
+    d.text((W - 88 - tw(d, PAGE_HANDLE, font(30)), H - 126), PAGE_HANDLE, font=font(30), fill=C_MUTED)
     return np.array(img)
 
 
-
 def frame_chart(t, data, cache, total=11.0):
-    """Chart fills the screen. Header compact top. Value + milestone below."""
-    reveal  = ease_io(progress(t, 0, total * 0.92))  # slightly slower
-    vals    = data["vals"]
-    inv     = data["inv"]
+    reveal = ease_io(progress(t, 0, total * 0.94))
+    n_shown = max(1, int(len(data["vals"]) * reveal))
+    cur_val = data["vals"][n_shown - 1][1]
+    up = cur_val >= data["inv"]
+    accent = C_GREEN if up else C_RED
+    tint = C_CYAN if up else C_VIOLET
 
-    n_shown = max(1, int(len(vals) * reveal))
-    cur_val = vals[n_shown-1][1]
-    below_inv = cur_val < inv
-    col    = C_RED if below_inv else C_GREEN
-    glow_c = C_GLOW_R if below_inv else C_GLOW_G
+    img = make_base_canvas(t, tint=tint)
+    img = draw_hud_grid(img, t, alpha=30)
+    img = draw_soft_glow(img, W - 120, 180, 180, tint)
+    d = ImageDraw.Draw(img)
+    img = add_subtle_vignette(img, strength=0.10)
+    d = ImageDraw.Draw(img)
 
-    # Background
-    tint = reveal * 0.06
-    bg1  = lerp_col(C_BG1, glow_c, tint)
-    bg2  = lerp_col(C_BG2, glow_c, tint*0.4)
-    arr  = np.zeros((H, W, 3), dtype=np.uint8)
-    for y in range(H):
-        arr[y] = lerp_col(bg1, bg2, y/H)
-    img = Image.fromarray(arr)
-    d   = ImageDraw.Draw(img)
+    # Header bar.
+    hdr = [46, 42, W - 46, 214]
+    d.rounded_rectangle(hdr, radius=28, fill=(20, 24, 52))
+    d.rounded_rectangle([hdr[0], hdr[1], hdr[2], hdr[1] + 8], radius=28, fill=C_CYAN)
+    title = data.get("dn", data["sym"].replace(".NS", ""))
+    subtitle = f"{data['sd'].year} - {data['ed'].year} | Rs 1 Lakh Simulation"
+    d.text((74, 70), title, font=font(52, bold=True), fill=C_TEXT)
+    d.text((74, 140), subtitle, font=font(30), fill=C_MUTED)
 
-    # ── Compact header at top ──────────────────────────────────
-    name  = data.get("dn", data["sym"].replace(".NS",""))
-    hdr_y = 52
-    nf_   = font(48, bold=True)
-    # Name pill
-    nw_ = tw(d, name, nf_)
-    d.rounded_rectangle([W//2-nw_//2-24, hdr_y-6, W//2+nw_//2+24, hdr_y+56],
-                         radius=14, fill=C_BG3)
-    d.text((cx(d,name,nf_), hdr_y), name, font=nf_, fill=C_GOLD)
-    # Sub line
-    sub = f"{data['sd'].year} → {data['ed'].year}  |  Rs 1 Lakh Journey"
-    d.text((cx(d,sub,font(26)), hdr_y+64), sub, font=font(26), fill=C_WHITE)
-    d.rectangle([80, hdr_y+100, W-80, hdr_y+102], fill=(*C_GOLD, 80))
-
-    # ── Chart — fills most of screen ──────────────────────────
-    chart_y = hdr_y + 112
-    cw, ch  = W, H - chart_y - 280  # full width, leaves 280px below for counter+badge
-
-    key = int(reveal * 200)
+    chart_y = 238
+    cw, ch = W - 80, 1040
+    key = int(reveal * 220)
     if key not in cache:
-        cache[key] = make_chart(data, reveal=reveal, w=cw, h=ch, cur_val=cur_val)
+        cache[key] = make_chart(data, reveal=reveal, w=cw, h=ch)
+    chart = cache[key].resize((cw, ch), Image.LANCZOS)
+    d.rounded_rectangle([40, chart_y - 12, W - 40, chart_y + ch + 12], radius=30, fill=(11, 12, 30))
+    # Dynamic camera path with tip lock-on (no perspective distortion).
+    cam_zoom = 1.04 - 0.02 * reveal
+    zw, zh = int(cw * cam_zoom), int(ch * cam_zoom)
+    zchart = chart.resize((zw, zh), Image.LANCZOS)
+    pan_x = int((reveal - 0.5) * (44 + 14 * EFFECT_INTENSITY) + math.sin(t * 0.85) * (8 + 5 * EFFECT_INTENSITY))
+    pan_y = int((0.5 - reveal) * (34 + 12 * EFFECT_INTENSITY) + math.sin(t * 0.52) * (6 + 3 * EFFECT_INTENSITY))
 
-    chart_img = cache[key].resize((cw, ch), Image.LANCZOS)
-    # Zoom effect
-    zoom   = lerp(1.04, 1.0, ease_out3(progress(t, 0, 3.0)))
-    zw, zh = int(cw*zoom), int(ch*zoom)
-    zoomed = chart_img.resize((zw, zh), Image.LANCZOS)
-    ox, oy = (zw-cw)//2, (zh-ch)//2
-    img.paste(zoomed.crop((ox, oy, ox+cw, oy+ch)), (0, chart_y))
+    # Tip lock-on: gently keeps current chart tip in visual focus as line advances.
+    all_prices = [v[1] for v in data["vals"]]
+    ymin = min(all_prices) * 0.84
+    ymax = max(all_prices) * 1.10
+    tip_x_ratio = (n_shown - 1) / max(1, len(data["vals"]) - 1)
+    tip_y_ratio = clamp((cur_val - ymin) / max(1e-9, (ymax - ymin)))
+    tip_px = int(tip_x_ratio * zw)
+    tip_py = int((1.0 - tip_y_ratio) * zh)
+    target_x = int(cw * 0.76)
+    target_y = int(ch * 0.34)
+    lock_x = tip_px - target_x
+    lock_y = tip_py - target_y
+    lock_strength = progress(reveal, 0.16, 0.42) * (1.0 - progress(reveal, 0.9, 1.0))
 
-    chart_bot = chart_y + ch
+    ox_base = (zw - cw) // 2 + pan_x
+    oy_base = (zh - ch) // 2 + pan_y
+    ox = int(lerp(ox_base, lock_x, lock_strength))
+    oy = int(lerp(oy_base, lock_y, lock_strength))
+    ox = max(0, min(zw - cw, ox))
+    oy = max(0, min(zh - ch, oy))
+    img.paste(zchart.crop((ox, oy, ox + cw, oy + ch)), (40, chart_y))
+    d = ImageDraw.Draw(img)
 
-    # ── Value counter ──────────────────────────────────────────
-    val_str = fmt_money_ascii(cur_val)
-    vf_     = font(80, bold=True)
-    val_y   = chart_bot + 14
-    for r in [6, 3]:
-        d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_,
-               fill=(*col, 20//r))
-    d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_, fill=col)
+    # Live counter and multiplier.
+    value_txt = fmt_money_ascii(cur_val)
+    val_f = font(82, bold=True)
+    d.text((cx(d, value_txt, val_f), 1348), value_txt, font=val_f, fill=accent)
+    d.text((cx(d, "CURRENT VALUE", font(28, True)), 1312), "CURRENT VALUE", font=font(28, True), fill=C_MUTED)
 
-    # ── Milestone — elegant text style, not a box ──────────────
-    ms_list = milestones(inv, data["ev"])
-    shown   = []
-    for m in ms_list:
-        target = inv * m
-        for i,(dd,v) in enumerate(vals):
-            if v >= target and i/len(vals) <= reveal:
-                shown.append((m, i/len(vals)))
+    mult = cur_val / data["inv"]
+    mult_txt = f"{mult:.2f}x"
+    bubble_w = tw(d, mult_txt, font(62, True)) + 78
+    bx = (W - bubble_w) // 2
+    by = 1460
+    d.rounded_rectangle([bx, by, bx + bubble_w, by + 108], radius=54, fill=(28, 34, 70))
+    d.rounded_rectangle([bx, by, bx + bubble_w, by + 6], radius=54, fill=accent)
+    mult_f = font(62, True)
+    d.text((bx + 40, by + 20), mult_txt, font=mult_f, fill=accent)
+
+    # Milestone flash + crackers.
+    for m in milestones(data["inv"], data["ev"]):
+        target = data["inv"] * m
+        for i, (_, v) in enumerate(data["vals"]):
+            if v >= target:
+                frac = i / max(1, len(data["vals"]) - 1)
+                fp = progress(reveal, frac, frac + 0.12)
+                if 0 < fp < 1:
+                    alpha = int(120 * (1 - fp))
+                    ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                    od = ImageDraw.Draw(ov)
+                    od.rectangle([0, 0, W, H], fill=(*accent, alpha))
+                    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+                    d = ImageDraw.Draw(img)
+                    tag = f"{m}x UNLOCKED"
+                    d.text((cx(d, tag, font(108, True)), H // 2 - 94), tag, font=font(108, True), fill=C_TEXT)
+                    burst_t = fp * 0.75
+                    img = draw_cracker_burst(img, W // 2 - 240, H // 2 - 10, burst_t, 0.6, accent, seed=91 + m, intensity=90)
+                    img = draw_cracker_burst(img, W // 2 + 240, H // 2 - 10, burst_t, 0.6, C_GOLD, seed=131 + m, intensity=90)
+                    d = ImageDraw.Draw(img)
                 break
 
-    if shown:
-        latest_m, latest_frac = shown[-1]
-        pop_p = progress(reveal, latest_frac, latest_frac+0.12)
-        sp_e  = clamp(spring(pop_p, s=12, d=0.4))
-        if sp_e > 0.1:
-            ms_y  = val_y + 96
-            # Glowing text style — no box
-            ms_txt = f"✦  {latest_m}x  ✦"
-            mf_    = font(int(56*min(sp_e,1.0)), bold=True)
-            # Glow layers
-            for r in [8, 5, 2]:
-                d.text((cx(d,ms_txt,mf_), ms_y), ms_txt, font=mf_,
-                       fill=(*col, 20//r))
-            d.text((cx(d,ms_txt,mf_), ms_y), ms_txt, font=mf_, fill=col)
-            # "RETURN" sub label
-            sub_ms = "RETURN ACHIEVED"
-            d.text((cx(d,sub_ms,font(28)), ms_y+int(62*min(sp_e,1.0))),
-                   sub_ms, font=font(28), fill=(*C_GOLD, int(200*sp_e)))
+    # Tighter suspense: short, punchy end zoom handoff.
+    end_p = progress(t, total * 0.95, total)
+    if end_p > 0:
+        ze = ease_out5(end_p)
+        val_now = fmt_money_ascii(cur_val if reveal < 1 else data["ev"])
+        size = int(82 + 110 * ze)
+        vf = font(size, True)
+        fade = Image.new("RGBA", img.size, (0, 0, 0, int(210 * ze)))
+        img = Image.alpha_composite(img.convert("RGBA"), fade).convert("RGB")
+        d = ImageDraw.Draw(img)
+        d.text((cx(d, val_now, vf), H // 2 - size // 2), val_now, font=vf, fill=accent)
+        sub = "FINAL NUMBER REVEAL"
+        d.text((cx(d, sub, font(34, True)), H // 2 + size // 2 + 24), sub, font=font(34, True), fill=C_GOLD)
 
-    # ── Full-screen milestone FLASH — 2 seconds ────────────────
-    for m, frac in shown:
-        flash_p = progress(reveal, frac, frac+0.18)  # ~2s
-        if 0 < flash_p < 1:
-            flash_e = ease_out3(1 - flash_p)
-            ov = Image.new("RGBA", img.size, (0,0,0,0))
-            od = ImageDraw.Draw(ov)
-            od.rectangle([0,0,W,H], fill=(*col, int(130*flash_e)))
-            img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-            d   = ImageDraw.Draw(img)
-            ms_txt = f"{m}x RETURN!"
-            mf     = font(148, bold=True)
-            d.text((cx(d,ms_txt,mf)+4, H//2-84), ms_txt, font=mf, fill=(0,0,0))
-            d.text((cx(d,ms_txt,mf), H//2-88), ms_txt, font=mf,
-                   fill=(*C_GOLD, int(255*flash_e)))
-            d.text((cx(d,"Your investment multiplied!",font(44)), H//2+80),
-                   "Your investment multiplied!", font=font(44),
-                   fill=(*C_WHITE, int(220*flash_e)))
-            rng2 = random.Random(m*77)
-            for _ in range(60):
-                angle = rng2.uniform(0, 2*math.pi)
-                dist  = int(rng2.uniform(100, 500) * (1-flash_e))
-                px    = W//2 + int(math.cos(angle)*dist)
-                py    = H//2 + int(math.sin(angle)*dist*0.7)
-                ps    = rng2.randint(5, 18)
-                pc    = C_GOLD if rng2.random() > 0.4 else col
-                ov2   = Image.new("RGBA", img.size, (0,0,0,0))
-                od2   = ImageDraw.Draw(ov2)
-                od2.ellipse([px-ps, py-ps, px+ps, py+ps],
-                            fill=(*pc, int(255*flash_e)))
-                img = Image.alpha_composite(img.convert("RGBA"), ov2).convert("RGB")
-                d   = ImageDraw.Draw(img)
-            break
-
-    # ── Final zoom transition at 100% ─────────────────────────
-    if reveal >= 1.0:
-        zoom_p = ease_out5(progress(t, total*0.92, total))
-        if zoom_p > 0:
-            final_val = fmt_money_ascii(data["ev"])
-            fvs = int(lerp(80, 168, zoom_p))
-            fvf = font(fvs, bold=True)
-            fade_ov = Image.new("RGBA", img.size, (0,0,0,0))
-            fade_d  = ImageDraw.Draw(fade_ov)
-            fade_d.rectangle([0,0,W,H], fill=(0,0,0,int(210*zoom_p)))
-            img = Image.alpha_composite(img.convert("RGBA"), fade_ov).convert("RGB")
-            d   = ImageDraw.Draw(img)
-            d.text((cx(d,final_val,fvf), H//2-fvs//2), final_val,
-                   font=fvf, fill=col)
-
-    bf = font(28, bold=True)
-    d.text((cx(d,PAGE_NAME,bf), H-60), PAGE_NAME, font=bf, fill=C_GOLD)
-    d.rectangle([0, H-4, W, H], fill=C_GOLD)
+    d.text((cx(d, PAGE_NAME, font(32, True)), H - 64), PAGE_NAME, font=font(32, True), fill=C_TEXT)
     return np.array(img)
 
 
 def frame_result(t, data, total=7.0):
-    """
-    Sequential square cards. 5 cards total.
-    Each card has unique color theme.
-    Company name styled with gradient-like effect.
-    """
-    is_up = data["ev"] >= data["inv"]
-    col   = C_GREEN if is_up else C_RED
-    gc    = C_GLOW_G if is_up else C_GLOW_R
+    img = make_base_canvas(t, tint=C_GOLD)
+    img = draw_hud_grid(img, t, alpha=26)
+    d = ImageDraw.Draw(img)
+    up = data["ev"] >= data["inv"]
+    accent = C_GREEN if up else C_RED
 
-    img = make_canvas()
-    d   = ImageDraw.Draw(img)
+    # Smooth carry-over from chart zoom.
+    if t < 0.9:
+        p_in = ease_out5(progress(t, 0.0, 0.9))
+        hold_val = fmt_money_ascii(data["ev"])
+        size = int(176 - 102 * p_in)
+        vf = font(size, True)
+        fade = Image.new("RGBA", img.size, (0, 0, 0, int(190 * (1 - p_in))))
+        img = Image.alpha_composite(img.convert("RGBA"), fade).convert("RGB")
+        d = ImageDraw.Draw(img)
+        d.text((cx(d, hold_val, vf), H // 2 - size // 2 - 60), hold_val, font=vf, fill=accent)
+        d.text((cx(d, "LOCKED RESULT", font(34, True)), H // 2 + 78),
+               "LOCKED RESULT", font=font(34, True), fill=C_GOLD)
 
-    # Glow
-    for r in range(5, 0, -1):
-        radius = 220 + r*55
-        a      = int(14*r/5)
-        ov     = Image.new("RGBA", img.size, (0,0,0,0))
-        od     = ImageDraw.Draw(ov)
-        od.ellipse([W//2-radius, H//2-radius, W//2+radius, H//2+radius],
-                   fill=(*gc, a))
-        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-        d   = ImageDraw.Draw(img)
+    # Hero text.
+    hdr_f = font(40, True)
+    name_f = font(64, True)
+    d.text((cx(d, "RESULT DASHBOARD", hdr_f), 84), "RESULT DASHBOARD", font=hdr_f, fill=C_TEXT)
+    d.text((cx(d, data.get("dn", data["sym"]), name_f), 142), data.get("dn", data["sym"]), font=name_f, fill=C_GOLD)
 
-    d.rectangle([0, 0, W, 3], fill=C_GOLD)
-    d.rectangle([0, H-3, W, H], fill=C_GOLD)
-
-    # ── Company name — big, styled, with decorative underline ─
-    name = data.get("dn", data["sym"].replace(".NS",""))
-    hdr_y = 90
-    # Auto-size
-    for ns in [80, 68, 58, 50]:
-        nf_ = font(ns, bold=True)
-        if tw(d, name, nf_) <= W-80: break
-    # Gold shadow for depth
-    d.text((cx(d,name,nf_)+3, hdr_y+3), name, font=nf_, fill=(100,80,0))
-    d.text((cx(d,name,nf_), hdr_y), name, font=nf_, fill=C_GOLD)
-    # Decorative line under name
-    nw_ = tw(d, name, nf_)
-    d.rectangle([W//2-nw_//2, hdr_y+ns+8, W//2+nw_//2, hdr_y+ns+12],
-                fill=C_GOLD)
-    # Small dots at ends
-    d.ellipse([W//2-nw_//2-10, hdr_y+ns+4, W//2-nw_//2+2, hdr_y+ns+16],
-              fill=C_GOLD)
-    d.ellipse([W//2+nw_//2-2, hdr_y+ns+4, W//2+nw_//2+10, hdr_y+ns+16],
-              fill=C_GOLD)
-
-    # ── Price display — stylish arrow ─────────────────────────
-    price_y = hdr_y + ns + 30
-    # "Rs 1 Lakh" on left, arrow center, current value on right
-    p_val = ease_out5(progress(t, 0.0, 0.6))
-    inv_str = "Rs 1 Lakh"
-    val_str = fmt_money_ascii(data["ev"])
-    inv_f   = font(44)
-    arr_f   = font(60, bold=True)
-    val_f   = font(int(lerp(30,88,p_val)), bold=True)
-
-    inv_w = tw(d, inv_str, inv_f)
-    arr_w = tw(d, "→", arr_f)
-    val_w = tw(d, val_str, val_f)
-    total_w = inv_w + arr_w + val_w + 60
-    sx = (W - total_w) // 2
-
-    d.text((sx, price_y+8), inv_str, font=inv_f, fill=C_WHITE)
-    d.text((sx+inv_w+20, price_y), "→", font=arr_f, fill=C_GOLD)
-    # Value with glow
-    vx = sx + inv_w + arr_w + 40
-    for r in [6, 3]:
-        d.text((vx, price_y+8), val_str, font=val_f, fill=(*col, 20//r))
-    d.text((vx, price_y+8), val_str, font=val_f, fill=col)
-
-    # ── 5 Cards with unique color themes ──────────────────────
-    # (label, value, border_color, has_burst)
-    C_BLUE   = (80,  160, 255)   # blue for invested
-    C_PURPLE = (160, 100, 255)   # purple for duration
-    C_TEAL   = (0,   200, 180)   # teal for current price
-    CARDS = [
-        ("INVESTED",      "Rs 1 Lakh",                           C_BLUE,   False),
-        ("DURATION",      f"{data['yrs']:.0f} Years",            C_PURPLE, False),
-        ("CURRENT VALUE", fmt_money_ascii(data["ev"]),            col,      False),
-        ("CAGR",          f"{data['cagr']:.1f}%",                C_GOLD,   True),
-        ("TOTAL RETURN",  f"{(data['ev']/data['inv']-1)*100:.0f}%", col,   True),
-    ]
-    # In "all cards" view, replace INVESTED with CURRENT VALUE
-    CARDS_ALL = [
-        ("CURRENT VALUE", fmt_money_ascii(data["ev"]),            col,      False),
-        ("DURATION",      f"{data['yrs']:.0f} Years",            C_PURPLE, False),
-        ("CAGR",          f"{data['cagr']:.1f}%",                C_GOLD,   True),
-        ("TOTAL RETURN",  f"{(data['ev']/data['inv']-1)*100:.0f}%", col,   True),
+    cards = [
+        ("INVESTED", "Rs 1 Lakh", C_CYAN),
+        ("FINAL VALUE", fmt_money_ascii(data["ev"]), accent),
+        ("DURATION", f"{data['yrs']:.1f} Years", C_VIOLET),
+        ("CAGR", f"{data['cagr']:.1f}%", C_GOLD),
+        ("TOTAL RETURN", f"{((data['ev'] / data['inv']) - 1) * 100:.0f}%", accent),
     ]
 
-    SHOW_ALL_FROM = 4.2  # all 4 cards show together from 4.2s → 7.0s = 2.8s hold
-    SQ = 400
-    cards_center_y = H//2 + 160
-
-    if t >= SHOW_ALL_FROM:
-        # 2x2 grid with CARDS_ALL
-        p_all = ease_out3(progress(t, SHOW_ALL_FROM, total))
-        gap   = 20
-        gx    = (W - SQ*2 - gap) // 2
-        gy    = int(cards_center_y - (SQ*2+gap)//2 + 30*(1-p_all))
-        for i,(lbl,val2,vc,_) in enumerate(CARDS_ALL):
-            row = i//2; c2 = i%2
-            bx  = gx + c2*(SQ+gap)
-            by  = gy + row*(SQ+gap)
-            # Card bg
-            d.rounded_rectangle([bx, by, bx+SQ, by+SQ],
-                                  radius=26, fill=C_BG3)
-            # Colored top border
-            d.rounded_rectangle([bx, by, bx+SQ, by+10],
-                                  radius=26, fill=vc)
-            # Subtle left accent
-            d.rounded_rectangle([bx, by, bx+8, by+SQ],
-                                  radius=26, fill=(*vc, 80))
-            lf2 = font(28, bold=True)
-            d.text((bx+cx(d,lbl,lf2,SQ), by+20), lbl, font=lf2, fill=C_WHITE)
-            for vs in [68, 56, 46, 38]:
-                vf2 = font(vs, bold=True)
-                if tw(d,val2,vf2) <= SQ-32: break
-            d.text((bx+cx(d,val2,vf2,SQ), by+SQ//2-vs//2+10),
-                   val2, font=vf2, fill=vc)
+    # Sequential reveal then all grid.
+    show_grid_at = 4.0
+    if t < show_grid_at:
+        idx = min(len(cards) - 1, max(0, int((t / show_grid_at) * len(cards))))
+        lbl, val, color = cards[idx]
+        pop = clamp(spring(progress(t % 0.8, 0.0, 0.65), 11, 0.48))
+        s = int(700 * max(0.62, min(1.02, pop)))
+        x = (W - s) // 2
+        y = H // 2 - s // 2 + 110
+        d.rounded_rectangle([x, y, x + s, y + s], radius=34, fill=(20, 24, 56))
+        d.rounded_rectangle([x, y, x + s, y + 10], radius=34, fill=color)
+        d.text((x + 42, y + 44), lbl, font=font(int(46 * (s / 700)), True), fill=C_TEXT)
+        vf = font(int(82 * (s / 700)), True)
+        d.text((x + (s - tw(d, val, vf)) // 2, y + s // 2 - 28), val, font=vf, fill=color)
+        if lbl in ("CAGR", "TOTAL RETURN"):
+            burst_local_t = (t % 0.8)
+            img = draw_cracker_burst(img, W // 2 - 190, y + s // 2, burst_local_t, 0.7, color, seed=777 + idx, intensity=95)
+            img = draw_cracker_burst(img, W // 2 + 190, y + s // 2, burst_local_t, 0.7, C_GOLD, seed=888 + idx, intensity=95)
+            d = ImageDraw.Draw(img)
     else:
-        # Sequential
-        slot_dur = 0.72
-        card_idx = int((t-0.65)/slot_dur) if t >= 0.65 else -1
-        if 0 <= card_idx < len(CARDS):
-            lbl, val2, vc, has_burst = CARDS[card_idx]
-            slot_t = t - 0.65 - card_idx*slot_dur
-            if slot_t < 0.16:
-                p_in  = ease_out3(slot_t/0.16)
-                alpha = int(255*p_in); scale = lerp(0.55, 1.0, p_in)
-            elif slot_t < 0.52:
-                alpha = 255; scale = 1.0
-            else:
-                p_out = ease_in2((slot_t-0.52)/0.20)
-                alpha = int(255*(1-p_out)); scale = lerp(1.0, 0.75, p_out)
+        p = ease_out3(progress(t, show_grid_at, total))
+        gw, gh = 470, 360
+        gap = 24
+        start_x = (W - (gw * 2 + gap)) // 2
+        start_y = int(500 + (1 - p) * 36)
+        grid_cards = cards[1:]
+        for i, (lbl, val, color) in enumerate(grid_cards):
+            r = i // 2
+            c = i % 2
+            x = start_x + c * (gw + gap)
+            y = start_y + r * (gh + gap)
+            d.rounded_rectangle([x, y, x + gw, y + gh], radius=28, fill=(20, 24, 56))
+            d.rounded_rectangle([x, y, x + gw, y + 9], radius=28, fill=color)
+            d.text((x + 24, y + 28), lbl, font=font(29, True), fill=C_TEXT)
+            vf = font(56, True)
+            while tw(d, val, vf) > gw - 44 and vf.size > 30:
+                vf = font(vf.size - 2, True)
+            d.text((x + (gw - tw(d, val, vf)) // 2, y + 154), val, font=vf, fill=color)
+            if lbl in ("CAGR", "TOTAL RETURN"):
+                img = draw_bubble_field(img, [x, y, x + gw, y + gh], t + i * 0.23, color, seed=200 + i, count=18)
+                d = ImageDraw.Draw(img)
+                pulse_t = ((t * 0.9 + i * 0.17) % 1.0)
+                img = draw_cracker_burst(img, x + gw // 2, y + gh // 2, pulse_t, 0.55, color, seed=430 + i, intensity=52)
+                d = ImageDraw.Draw(img)
 
-            sq_s = int(SQ * scale)
-            bx   = (W - sq_s)//2
-            by   = cards_center_y - sq_s//2
-
-            # Massive particle burst for CAGR and Total Return
-            if has_burst and slot_t < 0.5:
-                burst_e = ease_out3(slot_t/0.5)
-                rng3    = random.Random(card_idx*333)
-                for _ in range(120):
-                    angle = rng3.uniform(0, 2*math.pi)
-                    dist  = int(rng3.uniform(80, 520) * burst_e)
-                    px    = W//2 + int(math.cos(angle)*dist)
-                    py    = cards_center_y + int(math.sin(angle)*dist*0.8)
-                    ps    = rng3.randint(5, 20)
-                    pc    = C_GOLD if rng3.random() > 0.35 else vc
-                    a_p   = int(255*(1-burst_e*0.7))
-                    ov3   = Image.new("RGBA", img.size, (0,0,0,0))
-                    od3   = ImageDraw.Draw(ov3)
-                    od3.ellipse([px-ps, py-ps, px+ps, py+ps], fill=(*pc, a_p))
-                    img = Image.alpha_composite(img.convert("RGBA"), ov3).convert("RGB")
-                    d   = ImageDraw.Draw(img)
-
-            # Card
-            d.rounded_rectangle([bx, by, bx+sq_s, by+sq_s],
-                                  radius=int(26*scale), fill=C_BG3)
-            d.rounded_rectangle([bx, by, bx+sq_s, by+int(10*scale)],
-                                  radius=int(26*scale), fill=vc)
-            d.rounded_rectangle([bx, by, bx+int(8*scale), by+sq_s],
-                                  radius=int(26*scale), fill=(*vc, 80))
-            lf2 = font(int(30*scale), bold=True)
-            d.text((bx+cx(d,lbl,lf2,sq_s), by+int(22*scale)),
-                   lbl, font=lf2, fill=(*C_WHITE, alpha))
-            for vs in [80, 68, 56, 46]:
-                vf2 = font(int(vs*scale), bold=True)
-                if tw(d,val2,vf2) <= sq_s-32: break
-            d.text((bx+cx(d,val2,vf2,sq_s), by+sq_s//2-int(vs*scale)//2+10),
-                   val2, font=vf2, fill=(*vc, alpha))
-
-    bf = font(32, bold=True)
-    d.text((cx(d,PAGE_NAME,bf), H-80), PAGE_NAME, font=bf, fill=C_GOLD)
+    d.text((cx(d, PAGE_NAME, font(34, True)), H - 72), PAGE_NAME, font=font(34, True), fill=C_TEXT)
     return np.array(img)
 
 
 def frame_outro(t, total=2.0):
-    """19-21s: Clean cinematic outro."""
-    img = make_canvas()
-    d   = ImageDraw.Draw(img)
+    p = ease_out5(progress(t, 0.0, total))
+    img = make_base_canvas(t, tint=C_CYAN)
+    img = draw_hud_grid(img, t, alpha=18)
+    img = draw_soft_glow(img, W // 2, H // 2 - 220, 220, C_CYAN)
+    d = ImageDraw.Draw(img)
 
-    # Subtle center glow
-    for r in range(5, 0, -1):
-        radius = 200 + r*50
-        a      = int(15*r/5)
-        ov     = Image.new("RGBA", img.size, (0,0,0,0))
-        od     = ImageDraw.Draw(ov)
-        od.ellipse([W//2-radius, H//2-radius-80,
-                    W//2+radius, H//2+radius-80], fill=(*C_GOLD, a))
-        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
-        d   = ImageDraw.Draw(img)
+    title = PAGE_NAME
+    f_title = font(96, True)
+    while tw(d, title, f_title) > W - 100 and f_title.size > 52:
+        f_title = font(f_title.size - 2, True)
+    img = draw_glow_text(img, title, f_title, cx(d, title, f_title), 460, C_TEXT, C_CYAN)
+    d = ImageDraw.Draw(img)
+    d.text((cx(d, PAGE_HANDLE, font(42)), 594), PAGE_HANDLE, font=font(42), fill=C_MUTED)
 
-    d.rectangle([0, 0, W, 3], fill=C_GOLD)
-    d.rectangle([0, H-3, W, H], fill=C_GOLD)
+    lines = ["Follow for daily market stories", "Data-driven investing insights"]
+    for i, line in enumerate(lines):
+        y = int(860 + i * 82 + (1 - p) * 18)
+        d.text((cx(d, line, font(46)), y), line, font=font(46), fill=C_TEXT)
 
-    # Brand name — fixed size, always fits
-    p_b = ease_out5(progress(t, 0.1, 0.8))
-    bf  = font(88, bold=True)
-    # Auto-shrink if needed
-    for bs in [88, 76, 64, 54]:
-        bf = font(bs, bold=True)
-        if tw(d, PAGE_NAME, bf) <= W - 80:
-            break
-    by_ = int(H//2 - 220 + 30*(1-p_b))
-    d.text((cx(d, PAGE_NAME, bf), by_), PAGE_NAME, font=bf,
-           fill=(*C_GOLD, int(255*p_b)))
-
-    # Handle
-    p_h = ease_out3(progress(t, 0.35, 1.0))
-    hf  = font(38)
-    d.text((cx(d, PAGE_HANDLE, hf), H//2-100),
-           PAGE_HANDLE, font=hf, fill=(*C_MUTED, int(220*p_h)))
-
-    # Divider
-    p_div = ease_out3(progress(t, 0.4, 0.9))
-    dw    = int((W-160)*p_div)
-    d.rectangle([W//2-dw//2, H//2-50, W//2+dw//2, H//2-48],
-                fill=(*C_GOLD, 140))
-
-    # CTA
-    p_c = ease_out3(progress(t, 0.5, 1.2))
-    for i, line in enumerate(["Follow for daily stock", "investment insights!"]):
-        cf = font(46)
-        cy_ = int(H//2 + 10 + i*64 + 20*(1-p_c))
-        d.text((cx(d, line, cf), cy_), line, font=cf,
-               fill=(*C_WHITE, int(255*p_c)))
-
-    # Subscribe button
-    p_s = progress(t, 0.9, 1.6)
-    if p_s > 0:
-        se   = clamp(spring(p_s))
-        bw_, bh_ = 360, 76
-        bx   = W//2 - bw_//2
-        by   = H//2 + 180
-        d.rounded_rectangle([bx, by, bx+bw_, by+bh_], radius=38, fill=C_RED)
-        sf_  = font(40, bold=True)
-        sub  = "SUBSCRIBE"
-        d.text((bx + (bw_-tw(d,sub,sf_))//2,
-                by + (bh_-th(d,sub,sf_))//2),
-               sub, font=sf_, fill=C_WHITE)
-
+    btn_w, btn_h = 440, 94
+    bx, by = W // 2 - btn_w // 2, 1110
+    d.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=46, fill=C_VIOLET)
+    d.text((bx + (btn_w - tw(d, "WATCH NEXT", font(42, True))) // 2, by + 24), "WATCH NEXT", font=font(42, True), fill=C_TEXT)
     return np.array(img)
 
-# ── Thumbnail ──────────────────────────────────────────────────
+
 def create_thumbnail(data, path):
-    img = make_canvas()
-    img = add_grid(img, alpha=10)
-    is_up = data["ev"] >= data["inv"]
-    col   = C_GREEN if is_up else C_RED
-    gc    = C_GLOW_G if is_up else C_GLOW_R
-    img   = glow_ellipse(img, W//2, H//2-80, 420, 320, gc, layers=10)
-    d     = ImageDraw.Draw(img)
+    img = make_base_canvas(0.25, tint=C_CYAN)
+    img = draw_hud_grid(img, 0.2, alpha=22)
+    img = draw_soft_glow(img, W // 2, 430, 240, C_VIOLET)
+    d = ImageDraw.Draw(img)
 
-    name = data.get("dn", data["sym"].replace(".NS",""))
+    name = data.get("dn", data["sym"].replace(".NS", ""))
+    value = fmt_money_ascii(data["ev"])
+    up = data["ev"] >= data["inv"]
+    accent = C_GREEN if up else C_RED
 
-    # Top label
-    d.text((cx(d,"Rs 1 LAKH INVESTED IN",font(48,True)), 160),
-           "Rs 1 LAKH INVESTED IN", font=font(48,True), fill=C_MUTED)
+    d.text((cx(d, "Rs 1 LAKH IN", font(52, True)), 132), "Rs 1 LAKH IN", font=font(52, True), fill=C_MUTED)
+    d.text((cx(d, name, font(96, True)), 214), name, font=font(96, True), fill=C_TEXT)
+    d.text((cx(d, "BECAME", font(52, True)), 364), "BECAME", font=font(52, True), fill=C_MUTED)
+    d.text((cx(d, value, font(122, True)), 470), value, font=font(122, True), fill=accent)
 
-    # Stock name — big
-    nf_ = font(96, bold=True)
-    d.text((cx(d,name,nf_)+2, 232), name, font=nf_, fill=(0,0,0))
-    d.text((cx(d,name,nf_), 230), name, font=nf_, fill=C_WHITE)
-
-    # Arrow
-    d.text((cx(d,"↓",font(100,True)), 360), "↓", font=font(100,True), fill=col)
-
-    # Final value — massive
-    val = fmt_money_ascii(data["ev"])
-    vf_ = font(128, bold=True)
-    for r in [12, 7, 3]:
-        d.text((cx(d,val,vf_), 460), val, font=vf_, fill=(*col, 25//r))
-    d.text((cx(d,val,vf_), 460), val, font=vf_, fill=col)
-
-    # Years + CAGR
-    yr_s = f"In {data['yrs']:.0f} Years  |  CAGR {data['cagr']:.1f}%"
-    d.text((cx(d,yr_s,font(42)), 620), yr_s, font=font(42), fill=C_GOLD)
-
-    # Brand bar
-    d.rounded_rectangle([40, H-170, W-40, H-50], radius=24, fill=C_BG3)
-    d.rounded_rectangle([40, H-170, W-40, H-164], radius=24, fill=C_GOLD)
-    d.text((cx(d,PAGE_NAME,font(56,True)), H-152),
-           PAGE_NAME, font=font(56,True), fill=C_GOLD)
-    d.text((cx(d,PAGE_HANDLE,font(34)), H-88),
-           PAGE_HANDLE, font=font(34), fill=C_MUTED)
-
+    meta = f"{data['yrs']:.0f} Years | CAGR {data['cagr']:.1f}%"
+    d.text((cx(d, meta, font(44)), 652), meta, font=font(44), fill=C_GOLD)
+    d.rounded_rectangle([42, H - 174, W - 42, H - 52], radius=30, fill=(18, 22, 48))
+    d.rectangle([42, H - 174, W - 42, H - 166], fill=C_CYAN)
+    d.text((cx(d, PAGE_NAME, font(60, True)), H - 156), PAGE_NAME, font=font(60, True), fill=C_TEXT)
     img.save(path, quality=95)
     print(f"  [✓] Thumbnail -> {path}")
 
 
-# ── Main ───────────────────────────────────────────────────────
 def create_investment_reel(display_name, ticker, output_path):
+    global EFFECT_INTENSITY
     print(f"  Stock: {display_name} ({ticker})")
     print("  Fetching data...")
     data = fetch_data(ticker)
@@ -763,47 +763,93 @@ def create_investment_reel(display_name, ticker, output_path):
         return False
 
     data["dn"] = display_name
-    print(f"  {data['sd'].date()} → {data['ed'].date()} | "
-          f"{fmt_money_ascii(data['ev'])} | CAGR {data['cagr']:.1f}%")
+    total_return_pct = ((data["ev"] / data["inv"]) - 1) * 100
+    # Smart intensity mode: ties visual intensity to performance profile.
+    intensity_raw = 0.85 + clamp(total_return_pct / 450.0, 0.0, 1.4) + clamp(data["cagr"] / 35.0, 0.0, 0.9) * 0.35
+    EFFECT_INTENSITY = clamp(intensity_raw / 1.35, 0.75, 1.45)
+    print(
+        f"  {data['sd'].date()} -> {data['ed'].date()} | "
+        f"{fmt_money_ascii(data['ev'])} | CAGR {data['cagr']:.1f}%"
+    )
+    print(f"  [i] Smart intensity: {EFFECT_INTENSITY:.2f}")
 
-    # Thumbnail
     thumb = output_path.replace(".mp4", "_thumbnail.jpg")
     create_thumbnail(data, thumb)
 
     cache = {}
 
     def clip(fn, dur, **kw):
-        return VideoClip(lambda t: fn(t, **kw).astype(np.uint8),
-                         duration=dur).with_fps(FPS)
+        return VideoClip(lambda t: fn(t, **kw).astype(np.uint8), duration=dur).with_fps(FPS)
 
-    print("  Rendering...")
+    print("  Rendering redesigned reel...")
     clips = [
-        clip(frame_intro,  3.0,  name=display_name, years=data["yrs"]),
-        clip(frame_chart,  11.0, data=data, cache=cache),
-        clip(frame_result, 7.0,  data=data),
-        clip(frame_outro,  2.0),
+        clip(frame_intro, 3.0, name=display_name, years=data["yrs"]),
+        clip(frame_chart, 11.0, data=data, cache=cache),
+        clip(frame_result, 7.0, data=data),
+        clip(frame_outro, 2.0),
     ]
     video = concatenate_videoclips(clips)
+    total_duration = sum(c.duration for c in clips)
 
-    # Music — prefer cinematic
-    mfiles = sorted(
-        [f for f in os.listdir(MUSIC_DIR) if f.endswith((".mp3",".wav"))],
-        key=lambda x: "cinematic" in x.lower(), reverse=True
-    ) if os.path.exists(MUSIC_DIR) else []
+    # Map milestone events to global timeline for audio sparkle cues.
+    milestone_times = []
+    for m in milestones(data["inv"], data["ev"]):
+        target = data["inv"] * m
+        for i, (_, v) in enumerate(data["vals"]):
+            if v >= target:
+                frac = i / max(1, len(data["vals"]) - 1)
+                milestone_times.append(3.0 + frac * 11.0)  # chart starts at 3s, lasts 11s
+                break
+
+    mfiles = (
+        sorted(
+            [f for f in os.listdir(MUSIC_DIR) if f.endswith((".mp3", ".wav"))],
+            key=lambda x: "cinematic" in x.lower(),
+            reverse=True,
+        )
+        if os.path.exists(MUSIC_DIR)
+        else []
+    )
     print(f"  Music: {mfiles}")
     if mfiles:
         try:
             audio = AudioFileClip(os.path.join(MUSIC_DIR, mfiles[0]))
-            dur   = sum(c.duration for c in clips)
-            audio = audio.subclipped(0, min(dur, audio.duration))
-            video = video.with_audio(audio)
-            print("  [✓] Music embedded")
+            audio = audio.subclipped(0, min(total_duration, audio.duration))
+            detected_bpm = detect_music_bpm(audio)
+            print(f"  [i] Music tempo detected: {detected_bpm} BPM")
+            sfx = make_micro_sfx(total_duration, detected_bpm, milestone_times=milestone_times)
+            # Keep SFX subtle under music.
+            mixed = CompositeAudioClip([audio.with_volume_scaled(0.95), sfx.with_volume_scaled(0.60)])
+            video = video.with_audio(mixed)
+            print("  [✓] Music + micro SFX embedded")
         except Exception as e:
             print(f"  [!] Music error: {e}")
+            # Fallback: synthetic SFX only if music processing fails.
+            try:
+                sfx = make_micro_sfx(total_duration, 120, milestone_times=milestone_times)
+                video = video.with_audio(sfx.with_volume_scaled(0.45))
+                print("  [i] Fallback SFX-only audio applied")
+            except Exception as e2:
+                print(f"  [!] SFX fallback error: {e2}")
+    else:
+        # If no music found, still provide a very light synthetic bed.
+        try:
+            sfx = make_micro_sfx(total_duration, 120, milestone_times=milestone_times)
+            video = video.with_audio(sfx.with_volume_scaled(0.38))
+            print("  [i] No music found, using subtle synthetic SFX")
+        except Exception as e:
+            print(f"  [!] Could not create fallback SFX: {e}")
 
     print("  Writing video...")
-    video.write_videofile(output_path, fps=FPS, codec="libx264",
-                          audio_codec="aac", temp_audiofile="temp_inv.m4a",
-                          remove_temp=True, logger=None, preset="ultrafast")
+    video.write_videofile(
+        output_path,
+        fps=FPS,
+        codec="libx264",
+        audio_codec="aac",
+        temp_audiofile="temp_inv.m4a",
+        remove_temp=True,
+        logger=None,
+        preset="ultrafast",
+    )
     print(f"  [✓] Done -> {output_path}")
     return True
