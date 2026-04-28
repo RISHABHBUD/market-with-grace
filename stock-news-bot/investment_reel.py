@@ -202,10 +202,18 @@ def make_chart(data, reveal=1.0, w=1080, h=900, cur_val=None):
                 ax.axhline(y=target, color=gc, lw=0.8, ls=":", alpha=0.3)
                 break
 
-    # Glowing tip dot
+    # Rupee symbol at chart tip instead of plain dot
     if len(dates) > 1:
-        for s, a in [(300,0.05),(150,0.12),(50,0.4),(15,1.0)]:
-            ax.scatter([dates[-1]], [prices[-1]], color=gc, s=s, alpha=a, zorder=6)
+        tip_x, tip_y = dates[-1], prices[-1]
+        # Glow rings
+        for s, a in [(400,0.04),(200,0.10),(80,0.25)]:
+            ax.scatter([tip_x], [tip_y], color=gc, s=s, alpha=a, zorder=5)
+        # Annotate with Rs symbol
+        ax.annotate("Rs", xy=(tip_x, tip_y),
+                    fontsize=14, fontweight="bold", color=gc,
+                    ha="center", va="center", zorder=7,
+                    bbox=dict(boxstyle="circle,pad=0.3", fc=gc, ec="none", alpha=0.9),
+                    color="#04040C")
 
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#1A1A3A"); ax.spines["bottom"].set_color("#1A1A3A")
@@ -452,7 +460,11 @@ def frame_chart(t, data, cache, total=11.0):
 
 
 def frame_result(t, data, total=5.0):
-    """Sequential square cards, centered, particle burst on CAGR/Return."""
+    """
+    Sequential square cards. 5 cards total.
+    Each card has unique color theme.
+    Company name styled with gradient-like effect.
+    """
     is_up = data["ev"] >= data["inv"]
     col   = C_GREEN if is_up else C_RED
     gc    = C_GLOW_G if is_up else C_GLOW_R
@@ -474,89 +486,130 @@ def frame_result(t, data, total=5.0):
     d.rectangle([0, 0, W, 3], fill=C_GOLD)
     d.rectangle([0, H-3, W, H], fill=C_GOLD)
 
-    # ── Header — pushed down ───────────────────────────────────
+    # ── Company name — big, styled, with decorative underline ─
     name = data.get("dn", data["sym"].replace(".NS",""))
-    nf_  = font(52, bold=True)
-    d.text((cx(d,name,nf_), 90), name, font=nf_, fill=C_WHITE)
-    d.text((cx(d,"Rs 1 Lakh  →",font(40,True)), 162),
-           "Rs 1 Lakh  →", font=font(40,True), fill=C_WHITE)
+    hdr_y = 90
+    # Auto-size
+    for ns in [80, 68, 58, 50]:
+        nf_ = font(ns, bold=True)
+        if tw(d, name, nf_) <= W-80: break
+    # Gold shadow for depth
+    d.text((cx(d,name,nf_)+3, hdr_y+3), name, font=nf_, fill=(100,80,0))
+    d.text((cx(d,name,nf_), hdr_y), name, font=nf_, fill=C_GOLD)
+    # Decorative line under name
+    nw_ = tw(d, name, nf_)
+    d.rectangle([W//2-nw_//2, hdr_y+ns+8, W//2+nw_//2, hdr_y+ns+12],
+                fill=C_GOLD)
+    # Small dots at ends
+    d.ellipse([W//2-nw_//2-10, hdr_y+ns+4, W//2-nw_//2+2, hdr_y+ns+16],
+              fill=C_GOLD)
+    d.ellipse([W//2+nw_//2-2, hdr_y+ns+4, W//2+nw_//2+10, hdr_y+ns+16],
+              fill=C_GOLD)
 
-    # Final value — zooms in
+    # ── Price display — stylish arrow ─────────────────────────
+    price_y = hdr_y + ns + 30
+    # "Rs 1 Lakh" on left, arrow center, current value on right
     p_val = ease_out5(progress(t, 0.0, 0.6))
-    val   = fmt_money_ascii(data["ev"])
-    vf_   = font(int(lerp(40,112,p_val)), bold=True)
-    vy    = 240
-    for r in [8, 4]:
-        d.text((cx(d,val,vf_), vy), val, font=vf_, fill=(*col, 20//r))
-    d.text((cx(d,val,vf_), vy), val, font=vf_, fill=col)
+    inv_str = "Rs 1 Lakh"
+    val_str = fmt_money_ascii(data["ev"])
+    inv_f   = font(44)
+    arr_f   = font(60, bold=True)
+    val_f   = font(int(lerp(30,88,p_val)), bold=True)
 
-    # ── Square cards — centered vertically ────────────────────
+    inv_w = tw(d, inv_str, inv_f)
+    arr_w = tw(d, "→", arr_f)
+    val_w = tw(d, val_str, val_f)
+    total_w = inv_w + arr_w + val_w + 60
+    sx = (W - total_w) // 2
+
+    d.text((sx, price_y+8), inv_str, font=inv_f, fill=C_WHITE)
+    d.text((sx+inv_w+20, price_y), "→", font=arr_f, fill=C_GOLD)
+    # Value with glow
+    vx = sx + inv_w + arr_w + 40
+    for r in [6, 3]:
+        d.text((vx, price_y+8), val_str, font=val_f, fill=(*col, 20//r))
+    d.text((vx, price_y+8), val_str, font=val_f, fill=col)
+
+    # ── 5 Cards with unique color themes ──────────────────────
+    # (label, value, border_color, has_burst)
+    C_BLUE   = (80,  160, 255)   # blue for invested
+    C_PURPLE = (160, 100, 255)   # purple for duration
+    C_TEAL   = (0,   200, 180)   # teal for current price
     CARDS = [
-        ("INVESTED",     "Rs 1 Lakh",                          C_WHITE,  False),
-        ("DURATION",     f"{data['yrs']:.0f} Years",           C_WHITE,  False),
-        ("CAGR",         f"{data['cagr']:.1f}%",               C_GOLD,   True),
-        ("TOTAL RETURN", f"{(data['ev']/data['inv']-1)*100:.0f}%", col,  True),
+        ("INVESTED",      "Rs 1 Lakh",                           C_BLUE,   False),
+        ("DURATION",      f"{data['yrs']:.0f} Years",            C_PURPLE, False),
+        ("CURRENT VALUE", fmt_money_ascii(data["ev"]),            col,      False),
+        ("CAGR",          f"{data['cagr']:.1f}%",                C_GOLD,   True),
+        ("TOTAL RETURN",  f"{(data['ev']/data['inv']-1)*100:.0f}%", col,   True),
     ]
-    SHOW_ALL_FROM = 3.9
-    SQ = 420   # square card size
-    # Center of lower portion
-    cards_center_y = H//2 + 120
+    # In "all cards" view, replace INVESTED with CURRENT VALUE
+    CARDS_ALL = [
+        ("CURRENT VALUE", fmt_money_ascii(data["ev"]),            col,      False),
+        ("DURATION",      f"{data['yrs']:.0f} Years",            C_PURPLE, False),
+        ("CAGR",          f"{data['cagr']:.1f}%",                C_GOLD,   True),
+        ("TOTAL RETURN",  f"{(data['ev']/data['inv']-1)*100:.0f}%", col,   True),
+    ]
+
+    SHOW_ALL_FROM = 4.2
+    SQ = 400
+    cards_center_y = H//2 + 160
 
     if t >= SHOW_ALL_FROM:
-        # 2x2 grid of squares, centered
-        p_all  = ease_out3(progress(t, SHOW_ALL_FROM, total))
-        gap    = 24
-        grid_w = SQ*2 + gap
-        grid_h = SQ*2 + gap
-        gx     = (W - grid_w)//2
-        gy     = int(cards_center_y - grid_h//2 + 30*(1-p_all))
-        for i,(lbl,val2,vc,_) in enumerate(CARDS):
+        # 2x2 grid with CARDS_ALL
+        p_all = ease_out3(progress(t, SHOW_ALL_FROM, total))
+        gap   = 20
+        gx    = (W - SQ*2 - gap) // 2
+        gy    = int(cards_center_y - (SQ*2+gap)//2 + 30*(1-p_all))
+        for i,(lbl,val2,vc,_) in enumerate(CARDS_ALL):
             row = i//2; c2 = i%2
             bx  = gx + c2*(SQ+gap)
             by  = gy + row*(SQ+gap)
+            # Card bg
             d.rounded_rectangle([bx, by, bx+SQ, by+SQ],
-                                  radius=28, fill=C_BG3)
+                                  radius=26, fill=C_BG3)
+            # Colored top border
             d.rounded_rectangle([bx, by, bx+SQ, by+10],
-                                  radius=28, fill=vc)
-            lf2 = font(30, bold=True)
-            d.text((bx+cx(d,lbl,lf2,SQ), by+22), lbl, font=lf2, fill=C_WHITE)
-            for vs in [72, 60, 50, 42]:
+                                  radius=26, fill=vc)
+            # Subtle left accent
+            d.rounded_rectangle([bx, by, bx+8, by+SQ],
+                                  radius=26, fill=(*vc, 80))
+            lf2 = font(28, bold=True)
+            d.text((bx+cx(d,lbl,lf2,SQ), by+20), lbl, font=lf2, fill=C_WHITE)
+            for vs in [68, 56, 46, 38]:
                 vf2 = font(vs, bold=True)
                 if tw(d,val2,vf2) <= SQ-32: break
             d.text((bx+cx(d,val2,vf2,SQ), by+SQ//2-vs//2+10),
                    val2, font=vf2, fill=vc)
     else:
-        # Sequential — one square at a time
-        slot_dur = 0.8
-        card_idx = int((t-0.7)/slot_dur) if t >= 0.7 else -1
+        # Sequential
+        slot_dur = 0.72
+        card_idx = int((t-0.65)/slot_dur) if t >= 0.65 else -1
         if 0 <= card_idx < len(CARDS):
             lbl, val2, vc, has_burst = CARDS[card_idx]
-            slot_t = t - 0.7 - card_idx*slot_dur
-            if slot_t < 0.18:
-                p_in  = ease_out3(slot_t/0.18)
-                alpha = int(255*p_in)
-                scale = lerp(0.6, 1.0, p_in)
-            elif slot_t < 0.58:
+            slot_t = t - 0.65 - card_idx*slot_dur
+            if slot_t < 0.16:
+                p_in  = ease_out3(slot_t/0.16)
+                alpha = int(255*p_in); scale = lerp(0.55, 1.0, p_in)
+            elif slot_t < 0.52:
                 alpha = 255; scale = 1.0
             else:
-                p_out = ease_in2((slot_t-0.58)/0.22)
-                alpha = int(255*(1-p_out))
-                scale = lerp(1.0, 0.8, p_out)
+                p_out = ease_in2((slot_t-0.52)/0.20)
+                alpha = int(255*(1-p_out)); scale = lerp(1.0, 0.75, p_out)
 
             sq_s = int(SQ * scale)
             bx   = (W - sq_s)//2
             by   = cards_center_y - sq_s//2
 
-            # Particle burst for CAGR and Total Return — MASSIVE
+            # Massive particle burst for CAGR and Total Return
             if has_burst and slot_t < 0.5:
                 burst_e = ease_out3(slot_t/0.5)
                 rng3    = random.Random(card_idx*333)
-                for _ in range(120):  # 3x more particles
+                for _ in range(120):
                     angle = rng3.uniform(0, 2*math.pi)
                     dist  = int(rng3.uniform(80, 520) * burst_e)
                     px    = W//2 + int(math.cos(angle)*dist)
                     py    = cards_center_y + int(math.sin(angle)*dist*0.8)
-                    ps    = rng3.randint(5, 20)  # bigger particles
+                    ps    = rng3.randint(5, 20)
                     pc    = C_GOLD if rng3.random() > 0.35 else vc
                     a_p   = int(255*(1-burst_e*0.7))
                     ov3   = Image.new("RGBA", img.size, (0,0,0,0))
@@ -565,12 +618,15 @@ def frame_result(t, data, total=5.0):
                     img = Image.alpha_composite(img.convert("RGBA"), ov3).convert("RGB")
                     d   = ImageDraw.Draw(img)
 
+            # Card
             d.rounded_rectangle([bx, by, bx+sq_s, by+sq_s],
-                                  radius=int(28*scale), fill=C_BG3)
+                                  radius=int(26*scale), fill=C_BG3)
             d.rounded_rectangle([bx, by, bx+sq_s, by+int(10*scale)],
-                                  radius=int(28*scale), fill=vc)
-            lf2 = font(int(32*scale), bold=True)
-            d.text((bx+cx(d,lbl,lf2,sq_s), by+int(24*scale)),
+                                  radius=int(26*scale), fill=vc)
+            d.rounded_rectangle([bx, by, bx+int(8*scale), by+sq_s],
+                                  radius=int(26*scale), fill=(*vc, 80))
+            lf2 = font(int(30*scale), bold=True)
+            d.text((bx+cx(d,lbl,lf2,sq_s), by+int(22*scale)),
                    lbl, font=lf2, fill=(*C_WHITE, alpha))
             for vs in [80, 68, 56, 46]:
                 vf2 = font(int(vs*scale), bold=True)
@@ -578,7 +634,6 @@ def frame_result(t, data, total=5.0):
             d.text((bx+cx(d,val2,vf2,sq_s), by+sq_s//2-int(vs*scale)//2+10),
                    val2, font=vf2, fill=(*vc, alpha))
 
-    # Brand
     bf = font(32, bold=True)
     d.text((cx(d,PAGE_NAME,bf), H-80), PAGE_NAME, font=bf, fill=C_GOLD)
     return np.array(img)
