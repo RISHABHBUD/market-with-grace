@@ -209,7 +209,7 @@ def make_chart(data, reveal=1.0, w=1000, h=580):
     # Style
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#1A1A3A"); ax.spines["bottom"].set_color("#1A1A3A")
-    ax.tick_params(colors="#404060", labelsize=8, length=0)
+    ax.tick_params(colors="#C0C8E0", labelsize=10, length=0)  # bright tick labels
     ax.set_facecolor("#06060F")
 
     def fv(v,_):
@@ -230,67 +230,75 @@ def make_chart(data, reveal=1.0, w=1000, h=580):
 # ── Section frames ─────────────────────────────────────────────
 
 def frame_intro(t, name, years, total=3.0):
-    """0-3s: Clean aesthetic intro — minimal, elegant, readable."""
+    """0-3s: Clean aesthetic intro — readable, elegant."""
     img = make_canvas()
     d   = ImageDraw.Draw(img)
 
-    # Very subtle center glow — deep blue, not gold
-    for r in range(6, 0, -1):
-        radius = 200 + r * 50
-        a      = int(12 * r / 6)
+    # Subtle center glow
+    for r in range(5, 0, -1):
+        radius = 180 + r*55
+        a      = int(14*r/5)
         ov     = Image.new("RGBA", img.size, (0,0,0,0))
         od     = ImageDraw.Draw(ov)
         od.ellipse([W//2-radius, H//2-radius-80,
-                    W//2+radius, H//2+radius-80], fill=(20, 40, 100, a))
+                    W//2+radius, H//2+radius-80], fill=(20,40,100,a))
         img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
         d   = ImageDraw.Draw(img)
 
-    # Thin gold border lines top + bottom
     d.rectangle([0, 0, W, 3], fill=C_GOLD)
     d.rectangle([0, H-3, W, H], fill=C_GOLD)
 
-    # "IF YOU HAD INVESTED" — fades up
+    # "IF YOU HAD INVESTED" — bright white, not muted
     p1  = ease_out3(progress(t, 0.0, 0.7))
-    tf  = font(40)
+    tf  = font(42)
     t1  = "IF YOU HAD INVESTED"
-    t1y = int(H//2 - 300 + 30*(1-p1))
-    d.text((cx(d, t1, tf), t1y), t1, font=tf, fill=(*C_MUTED, int(220*p1)))
+    t1y = int(H//2 - 310 + 30*(1-p1))
+    d.text((cx(d,t1,tf), t1y), t1, font=tf,
+           fill=(*C_WHITE, int(230*p1)))
 
-    # "Rs 1 LAKH" — gold, medium
+    # "Rs 1 LAKH" — gold, bold
     p2  = ease_out3(progress(t, 0.15, 0.85))
-    rf  = font(76, bold=True)
+    rf  = font(80, bold=True)
     r1  = "Rs 1 LAKH"
-    r1y = int(H//2 - 200 + 25*(1-p2))
-    d.text((cx(d, r1, rf), r1y), r1, font=rf, fill=(*C_GOLD, int(255*p2)))
+    r1y = int(H//2 - 210 + 25*(1-p2))
+    d.text((cx(d,r1,rf), r1y), r1, font=rf,
+           fill=(*C_GOLD, int(255*p2)))
 
-    # Thin divider line grows from center
+    # Divider
     p3  = ease_out3(progress(t, 0.3, 0.9))
-    dw  = int((W - 160) * p3)
-    d.rectangle([W//2 - dw//2, H//2 - 100,
-                 W//2 + dw//2, H//2 - 98], fill=(*C_GOLD, 160))
+    dw  = int((W-160)*p3)
+    d.rectangle([W//2-dw//2, H//2-105, W//2+dw//2, H//2-103],
+                fill=(*C_GOLD, 160))
 
-    # Stock name — clean white, auto-sized, no glow
+    # Stock name — white, large
     p4  = ease_out5(progress(t, 0.4, 1.1))
     for ns in [104, 88, 74, 62, 52]:
         nf_ = font(ns, bold=True)
-        if tw(d, name, nf_) <= W - 80:
-            break
-    ny  = int(H//2 - 60 + 40*(1-p4))
-    d.text((cx(d, name, nf_), ny), name, font=nf_,
+        if tw(d, name, nf_) <= W-80: break
+    ny  = int(H//2 - 65 + 40*(1-p4))
+    d.text((cx(d,name,nf_), ny), name, font=nf_,
            fill=(*C_WHITE, int(255*p4)))
 
-    # "X Years Ago → Today"
-    p5  = ease_out3(progress(t, 0.65, 1.3))
-    yf_ = font(40)
-    yt  = f"{int(years)} Years Ago  →  Today"
-    yy  = int(H//2 + 80 + 20*(1-p5))
-    d.text((cx(d, yt, yf_), yy), yt, font=yf_,
-           fill=(*C_MUTED, int(220*p5)))
+    # "X Years Ago → Today" — highlight the number in gold
+    p5   = ease_out3(progress(t, 0.65, 1.3))
+    yf_  = font(44)
+    yf_b = font(44, bold=True)
+    yr_n = str(int(years))
+    yr_r = " Years Ago  →  Today"
+    # Draw number in gold, rest in white
+    yr_full = yr_n + yr_r
+    yr_y    = int(H//2 + 80 + 20*(1-p5))
+    total_w = tw(d, yr_full, yf_)
+    start_x = (W - total_w) // 2
+    d.text((start_x, yr_y), yr_n, font=yf_b,
+           fill=(*C_GOLD, int(255*p5)))
+    d.text((start_x + tw(d,yr_n,yf_b), yr_y), yr_r, font=yf_,
+           fill=(*C_WHITE, int(230*p5)))
 
     # Brand
-    p6  = ease_out3(progress(t, 0.9, 1.6))
-    bf  = font(34, bold=True)
-    d.text((cx(d, PAGE_NAME, bf), H-90), PAGE_NAME, font=bf,
+    p6 = ease_out3(progress(t, 0.9, 1.6))
+    bf = font(34, bold=True)
+    d.text((cx(d,PAGE_NAME,bf), H-90), PAGE_NAME, font=bf,
            fill=(*C_GOLD, int(255*p6)))
 
     return np.array(img)
@@ -298,236 +306,260 @@ def frame_intro(t, name, years, total=3.0):
 
 
 def frame_chart(t, data, cache, total=11.0):
-    """
-    3-14s: Premium chart section.
-    - Chart draws smoothly
-    - Zoom effect: starts slightly zoomed in, pulls back
-    - Milestone badges pop with spring animation
-    - Value counter at bottom
-    """
+    """3-14s: Premium chart — centered, clear axes, synced counter, staged stats."""
     reveal  = ease_io(progress(t, 0, total*0.88))
     is_up   = data["ev"] >= data["inv"]
     col     = C_GREEN if is_up else C_RED
     glow_c  = C_GLOW_G if is_up else C_GLOW_R
 
-    # Background tints slightly toward green/red as chart fills
-    tint = reveal * 0.08
+    # Background tints
+    tint = reveal * 0.07
     bg1  = lerp_col(C_BG1, glow_c, tint)
     bg2  = lerp_col(C_BG2, glow_c, tint*0.4)
     arr  = np.zeros((H, W, 3), dtype=np.uint8)
     for y in range(H):
         arr[y] = lerp_col(bg1, bg2, y/H)
     img = Image.fromarray(arr)
-    img = add_grid(img, alpha=10)
     d   = ImageDraw.Draw(img)
 
-    # Header — stock name
+    # ── Header (compact, above chart) ─────────────────────────
     name = data.get("dn", data["sym"].replace(".NS",""))
-    nf_  = font(56, bold=True)
-    d.text((cx(d,name,nf_)+2, 57), name, font=nf_, fill=(0,0,0))
-    d.text((cx(d,name,nf_), 55), name, font=nf_, fill=C_WHITE)
+    nf_  = font(52, bold=True)
+    d.text((cx(d,name,nf_), 42), name, font=nf_, fill=C_WHITE)
 
     sub = f"{data['sd'].year}  →  {data['ed'].year}   |   Rs 1 Lakh Journey"
-    sf  = font(28)
-    d.text((cx(d,sub,sf), 126), sub, font=sf, fill=C_MUTED)
+    sf  = font(26)
+    d.text((cx(d,sub,sf), 108), sub, font=sf, fill=C_WHITE)
 
-    # Gold divider
-    d.rectangle([80, 168, W-80, 170], fill=(*C_GOLD, 80))
+    d.rectangle([80, 148, W-80, 150], fill=(*C_GOLD, 80))
 
-    # Chart with zoom effect
-    key = int(reveal * 200)  # fine-grained cache for smooth animation
+    # ── Chart — centered vertically ────────────────────────────
+    cw, ch   = 1020, 620
+    chart_y  = 165   # just below header
+    # Chart takes up most of the screen, leaving room for counter + badges below
+
+    key = int(reveal * 200)
     if key not in cache:
         cache[key] = make_chart(data, reveal=reveal)
 
-    chart_img = cache[key]
-    cw, ch    = 1000, 580
-    chart_img = chart_img.resize((cw, ch), Image.LANCZOS)
+    chart_img = cache[key].resize((cw, ch), Image.LANCZOS)
 
-    # Zoom: starts at 1.08x, eases to 1.0x
-    zoom   = lerp(1.08, 1.0, ease_out3(progress(t, 0, 3.0)))
-    zw     = int(cw * zoom)
-    zh     = int(ch * zoom)
+    # Zoom effect
+    zoom   = lerp(1.06, 1.0, ease_out3(progress(t, 0, 3.0)))
+    zw, zh = int(cw*zoom), int(ch*zoom)
     zoomed = chart_img.resize((zw, zh), Image.LANCZOS)
-    cx_    = (zw - cw) // 2
-    cy_    = (zh - ch) // 2
-    chart_crop = zoomed.crop((cx_, cy_, cx_+cw, cy_+ch))
-    img.paste(chart_crop, ((W-cw)//2, 185))
+    ox, oy = (zw-cw)//2, (zh-ch)//2
+    img.paste(zoomed.crop((ox, oy, ox+cw, oy+ch)), ((W-cw)//2, chart_y))
 
-    chart_bot = 185 + ch  # 765
+    chart_bot = chart_y + ch  # ~785
 
-    # Milestone badges — spring pop
+    # ── Value counter — synced with chart tip ──────────────────
+    # Use same reveal ratio as chart so value matches the line tip
+    cur_val = data["inv"] + (data["ev"] - data["inv"]) * reveal
+    val_str = fmt_money_ascii(cur_val)
+    vf_     = font(86, bold=True)
+    val_y   = chart_bot + 16
+    for r in [6, 3]:
+        d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_,
+               fill=(*col, 20//r))
+    d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_, fill=col)
+
+    # ── Milestone badges — bottom, pop with cracker burst ──────
     ms_list = milestones(data["inv"], data["ev"])
     vals    = data["vals"]
-    badge_y = chart_bot + 18
+    badge_y = val_y + 100
     shown   = []
     for m in ms_list:
         target = data["inv"] * m
         for i,(dd,v) in enumerate(vals):
             if v >= target:
-                frac = i/len(vals)
-                if frac <= reveal:
-                    shown.append(m)
+                if i/len(vals) <= reveal:
+                    shown.append((m, i/len(vals)))
                 break
 
     if shown:
         bw = (W-80) // max(len(shown), 1)
-        for i, m in enumerate(shown[-5:]):
-            # Spring pop timing — each badge pops slightly after previous
-            pop_start = 0.05 * i
-            pop_p     = progress(reveal, pop_start, pop_start+0.15)
-            sp_e      = clamp(spring(pop_p))
-            bx        = 40 + i*bw
-            bh_       = int(72 * sp_e)
-            if bh_ < 4: continue
-            # Badge background
-            d.rounded_rectangle([bx+4, badge_y, bx+bw-4, badge_y+bh_],
-                                  radius=12, fill=C_BG3)
-            d.rounded_rectangle([bx+4, badge_y, bx+bw-4, badge_y+4],
-                                  radius=12, fill=col)
+        for idx, (m, frac) in enumerate(shown[-5:]):
+            # Each badge pops exactly when its milestone is crossed
+            pop_p  = progress(reveal, frac, frac+0.08)
+            sp_e   = clamp(spring(pop_p, s=12, d=0.4))
+            bx     = 40 + idx*bw
+            bh_    = int(80 * sp_e)
+            if bh_ < 6: continue
+
+            # Cracker burst particles around badge
+            if 0.05 < pop_p < 0.6:
+                burst_e = ease_out3(pop_p/0.6)
+                rng2    = random.Random(m*100)
+                for _ in range(12):
+                    angle = rng2.uniform(0, 2*math.pi)
+                    dist  = int(rng2.uniform(20, 60) * burst_e)
+                    px    = bx + bw//2 + int(math.cos(angle)*dist)
+                    py    = badge_y + bh_//2 + int(math.sin(angle)*dist*0.6)
+                    ps    = rng2.randint(3, 7)
+                    pc    = C_GOLD if rng2.random() > 0.4 else col
+                    a_p   = int(220*(1-burst_e))
+                    ov    = Image.new("RGBA", img.size, (0,0,0,0))
+                    od    = ImageDraw.Draw(ov)
+                    od.ellipse([px-ps, py-ps, px+ps, py+ps], fill=(*pc, a_p))
+                    img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+                    d   = ImageDraw.Draw(img)
+
+            # Badge card
+            d.rounded_rectangle([bx+6, badge_y, bx+bw-6, badge_y+bh_],
+                                  radius=14, fill=C_BG3)
+            d.rounded_rectangle([bx+6, badge_y, bx+bw-6, badge_y+5],
+                                  radius=14, fill=col)
             lbl = f"{m}x"
-            lf_ = font(int(34*sp_e), bold=True)
-            if bh_ > 30:
-                d.text((bx+4+cx(d,lbl,lf_,bw-8), badge_y+int(18*sp_e)),
+            lf_ = font(int(38*min(sp_e,1.0)), bold=True)
+            if bh_ > 35:
+                d.text((bx+6+cx(d,lbl,lf_,bw-12), badge_y+int(20*min(sp_e,1.0))),
                        lbl, font=lf_, fill=col)
 
-    # Value counter — accelerates
-    accel   = reveal**0.35
-    cur_val = data["inv"] + (data["ev"]-data["inv"]) * accel
-    val_str = fmt_money_ascii(cur_val)
-    vf_     = font(92, bold=True)
-    val_y   = badge_y + 90
-    # Glow
-    for r in [8, 5, 2]:
-        d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_,
-               fill=(*col, 25//r))
-    d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_, fill=col)
-
-    # Stats
-    stats = [f"CAGR  {data['cagr']:.1f}%",
-             f"Return  {(data['ev']/data['inv']-1)*100:.0f}%",
-             f"Years  {data['yrs']:.1f}"]
-    row_y = val_y + 110
-    bw3   = (W-80)//3
-    for i, stat in enumerate(stats):
-        bx = 40 + i*bw3
-        d.rounded_rectangle([bx+4, row_y, bx+bw3-4, row_y+76],
-                              radius=12, fill=C_BG3)
-        sf2 = font(28, bold=True)
-        d.text((bx+4+cx(d,stat,sf2,bw3-8), row_y+22),
-               stat, font=sf2, fill=C_GOLD)
+    # ── CAGR + Return — only after chart fully drawn ───────────
+    if reveal >= 0.98:
+        stats_p = ease_out3(progress(t, total*0.88, total))
+        stats   = [f"CAGR  {data['cagr']:.1f}%",
+                   f"Return  {(data['ev']/data['inv']-1)*100:.0f}%",
+                   f"Years  {data['yrs']:.1f}"]
+        row_y = badge_y + 90
+        bw3   = (W-80)//3
+        for i, stat in enumerate(stats):
+            bx  = 40 + i*bw3
+            by_ = int(row_y + 20*(1-stats_p))
+            d.rounded_rectangle([bx+4, by_, bx+bw3-4, by_+72],
+                                  radius=12, fill=C_BG3)
+            sf2 = font(28, bold=True)
+            d.text((bx+4+cx(d,stat,sf2,bw3-8), by_+20),
+                   stat, font=sf2, fill=C_GOLD)
 
     # Brand
     bf = font(30, bold=True)
-    d.text((cx(d,PAGE_NAME,bf), H-80), PAGE_NAME, font=bf, fill=C_GOLD)
+    d.text((cx(d,PAGE_NAME,bf), H-72), PAGE_NAME, font=bf, fill=C_GOLD)
     d.rectangle([0, H-4, W, H], fill=C_GOLD)
     return np.array(img)
 
 
 def frame_result(t, data, total=5.0):
     """
-    14-19s: The big reveal moment.
-    - Card slides up with spring
-    - Number counts up fast then slams to final
-    - Confetti-like particles burst
+    14-19s: Sequential card reveal.
+    0.0-0.8s: Final value slams in
+    0.8-1.6s: "Invested Rs 1 Lakh" card
+    1.6-2.4s: "X Years" card
+    2.4-3.2s: "CAGR X%" card
+    3.2-4.0s: "Return X%" card
+    4.0-5.0s: All 4 cards together
     """
     is_up = data["ev"] >= data["inv"]
     col   = C_GREEN if is_up else C_RED
     gc    = C_GLOW_G if is_up else C_GLOW_R
 
     img = make_canvas()
-    img = add_grid(img, alpha=8)
+    d   = ImageDraw.Draw(img)
 
-    # Burst glow
-    p_glow = progress(t, 0.0, 0.8)
-    eg     = ease_out5(p_glow)
-    img    = glow_ellipse(img, W//2, H//2-50,
-                          int(500*eg), int(400*eg), gc, layers=10)
-    d = ImageDraw.Draw(img)
+    # Glow behind value
+    for r in range(6, 0, -1):
+        radius = 200 + r*50
+        a      = int(12*r/6)
+        ov     = Image.new("RGBA", img.size, (0,0,0,0))
+        od     = ImageDraw.Draw(ov)
+        od.ellipse([W//2-radius, H//3-radius, W//2+radius, H//3+radius],
+                   fill=(*gc, a))
+        img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+        d   = ImageDraw.Draw(img)
 
-    # Particle burst
-    rng = random.Random(42)
-    p_burst = progress(t, 0.1, 1.5)
-    for _ in range(60):
-        angle = rng.uniform(0, 2*math.pi)
-        dist  = rng.uniform(100, 500) * ease_out3(p_burst)
-        size  = rng.randint(2, 6)
-        px    = int(W//2 + math.cos(angle)*dist)
-        py    = int(H//2 - 50 + math.sin(angle)*dist*0.7)
-        a     = int(200 * (1 - ease_in2(p_burst)))
-        pc    = C_GOLD if rng.random() > 0.4 else col
-        d.ellipse([px-size, py-size, px+size, py+size], fill=(*pc, a))
+    d.rectangle([0, 0, W, 3], fill=C_GOLD)
+    d.rectangle([0, H-3, W, H], fill=C_GOLD)
 
-    # Card — spring slide up
-    p_card = progress(t, 0.0, 0.7)
-    ec     = spring(p_card)
-    card_y = int(lerp(H, H//2-420, clamp(ec)))
-    card_h = 820
-    d.rounded_rectangle([50, card_y, W-50, card_y+card_h],
-                         radius=32, fill=C_BG3)
-    # Top accent bar
-    d.rounded_rectangle([50, card_y, W-50, card_y+8], radius=32, fill=col)
-    # Subtle inner glow on card top
-    for r in range(4, 0, -1):
-        a = int(30 * r/4)
-        d.rounded_rectangle([50, card_y, W-50, card_y+r*20],
-                              radius=32, fill=(*col, a))
-
-    # Stock name
+    # Stock name at top
     name = data.get("dn", data["sym"].replace(".NS",""))
-    nf_  = font(58, bold=True)
-    d.text((cx(d,name,nf_), card_y+28), name, font=nf_, fill=C_WHITE)
+    nf_  = font(52, bold=True)
+    d.text((cx(d,name,nf_), 50), name, font=nf_, fill=C_WHITE)
 
-    # "Rs 1 Lakh Invested"
-    d.text((cx(d,"Rs 1 Lakh Invested",font(44,True)), card_y+108),
-           "Rs 1 Lakh Invested", font=font(44,True), fill=C_MUTED)
+    # "Rs 1 Lakh → ?" label
+    d.text((cx(d,"Rs 1 Lakh  →",font(40,True)), 120),
+           "Rs 1 Lakh  →", font=font(40,True), fill=C_WHITE)
 
-    # Animated arrow
-    p_arr = progress(t, 0.4, 0.8)
-    if p_arr > 0:
-        af = font(int(lerp(20,88,ease_out3(p_arr))), bold=True)
-        d.text((cx(d,"↓",af), card_y+188), "↓", font=af, fill=col)
+    # Final value — big slam
+    p_val = ease_out5(progress(t, 0.0, 0.7))
+    val   = fmt_money_ascii(data["ev"])
+    vf_   = font(int(lerp(40,108,p_val)), bold=True)
+    vy    = 200
+    for r in [8, 4]:
+        d.text((cx(d,val,vf_), vy), val, font=vf_, fill=(*col, 20//r))
+    d.text((cx(d,val,vf_), vy), val, font=vf_, fill=col)
 
-    # Final value — slams in
-    p_val = progress(t, 0.6, 1.1)
-    if p_val > 0:
-        ev_  = spring(p_val)
-        vs   = int(lerp(40, 104, clamp(ev_)))
-        vf_  = font(vs, bold=True)
-        val  = fmt_money_ascii(data["ev"])
-        vy   = card_y + 295
-        for r in [10, 6, 3]:
-            d.text((cx(d,val,vf_), vy), val, font=vf_, fill=(*col, 25//r))
-        d.text((cx(d,val,vf_), vy), val, font=vf_, fill=col)
+    # Sequential stat cards
+    # Each card: label on top, value below, slides up and fades out before next
+    CARDS = [
+        ("INVESTED",      "Rs 1 Lakh",                    C_WHITE),
+        ("DURATION",      f"{data['yrs']:.0f} Years",     C_WHITE),
+        ("CAGR",          f"{data['cagr']:.1f}%",         C_GOLD),
+        ("TOTAL RETURN",  f"{(data['ev']/data['inv']-1)*100:.0f}%", col),
+    ]
+    SHOW_ALL_FROM = 4.0  # seconds when all 4 show together
 
-    # Stats grid
-    p_stats = progress(t, 1.0, 1.6)
-    if p_stats > 0:
-        es = ease_out3(p_stats)
-        stats = [("Invested","Rs 1 Lakh"),
-                 ("Years",   f"{data['yrs']:.1f}"),
-                 ("CAGR",    f"{data['cagr']:.1f}%"),
-                 ("Return",  f"{(data['ev']/data['inv']-1)*100:.0f}%")]
-        bw4 = (W-120)//4
-        for i,(lbl,val) in enumerate(stats):
-            bx = 60 + i*bw4
-            by = int(card_y+440 + 30*(1-es))
-            d.rounded_rectangle([bx+2, by, bx+bw4-2, by+120],
-                                  radius=14, fill=(20,28,60))
-            d.text((bx+2+cx(d,lbl,font(22,True),bw4-4), by+10),
-                   lbl, font=font(22,True), fill=C_MUTED)
-            d.text((bx+2+cx(d,val,font(36,True),bw4-4), by+48),
-                   val, font=font(36,True), fill=C_WHITE)
+    card_w = W - 120
+    card_x = 60
+    card_cy = 380  # center Y for single card
 
-    # Period
-    period = f"{data['sd'].strftime('%b %Y')} — {data['ed'].strftime('%b %Y')}"
-    d.text((cx(d,period,font(26)), card_y+590),
-           period, font=font(26), fill=C_MUTED)
-    d.text((cx(d,"Past performance ≠ future returns",font(20)),
-            card_y+640),
-           "Past performance ≠ future returns",
-           font=font(20), fill=(*C_MUTED, 140))
+    if t >= SHOW_ALL_FROM:
+        # All 4 together — 2x2 grid
+        p_all = ease_out3(progress(t, SHOW_ALL_FROM, total))
+        bw4   = (W-120)//2
+        bh4   = 160
+        for i,(lbl,val2,vc) in enumerate(CARDS):
+            row = i//2; col2 = i%2
+            bx  = 60 + col2*(bw4+20)
+            by  = int(360 + row*(bh4+16) + 30*(1-p_all))
+            d.rounded_rectangle([bx, by, bx+bw4, by+bh4],
+                                  radius=20, fill=C_BG3)
+            d.rounded_rectangle([bx, by, bx+bw4, by+6],
+                                  radius=20, fill=vc)
+            d.text((cx(d,lbl,font(24,True),bw4)+bx, by+16),
+                   lbl, font=font(24,True), fill=C_WHITE)
+            # Auto-size value
+            for vs in [52, 44, 36]:
+                vf2 = font(vs, bold=True)
+                if tw(d,val2,vf2) <= bw4-20: break
+            d.text((cx(d,val2,vf2,bw4)+bx, by+60),
+                   val2, font=vf2, fill=vc)
+    else:
+        # Sequential — one card at a time
+        slot_dur = 0.8  # each card shows for 0.8s
+        card_idx = int(t / slot_dur) if t >= 0.8 else -1
+        if 0 <= card_idx < len(CARDS):
+            slot_t   = t - card_idx * slot_dur
+            # Slide in (0-0.25s), hold (0.25-0.6s), slide out (0.6-0.8s)
+            if slot_t < 0.25:
+                p_in = ease_out3(slot_t / 0.25)
+                alpha = int(255*p_in)
+                dy    = int(60*(1-p_in))
+            elif slot_t < 0.6:
+                p_in = 1.0; alpha = 255; dy = 0
+            else:
+                p_out = ease_in2((slot_t-0.6)/0.2)
+                alpha = int(255*(1-p_out))
+                dy    = int(-40*p_out)
 
-    d.rectangle([0, H-4, W, H], fill=C_GOLD)
+            lbl, val2, vc = CARDS[card_idx]
+            bh4 = 180
+            by  = card_cy + dy
+            d.rounded_rectangle([card_x, by, card_x+card_w, by+bh4],
+                                  radius=24, fill=C_BG3)
+            d.rounded_rectangle([card_x, by, card_x+card_w, by+8],
+                                  radius=24, fill=vc)
+            d.text((cx(d,lbl,font(32,True)), by+20),
+                   lbl, font=font(32,True), fill=(*C_WHITE, alpha))
+            for vs in [80, 68, 56]:
+                vf2 = font(vs, bold=True)
+                if tw(d,val2,vf2) <= card_w-40: break
+            d.text((cx(d,val2,vf2), by+72),
+                   val2, font=vf2, fill=(*vc, alpha))
+
+    # Brand
+    bf = font(32, bold=True)
+    d.text((cx(d,PAGE_NAME,bf), H-80), PAGE_NAME, font=bf, fill=C_GOLD)
     return np.array(img)
 
 
