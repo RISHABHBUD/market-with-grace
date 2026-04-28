@@ -208,12 +208,12 @@ def make_chart(data, reveal=1.0, w=1080, h=900, cur_val=None):
         # Glow rings
         for s, a in [(400,0.04),(200,0.10),(80,0.25)]:
             ax.scatter([tip_x], [tip_y], color=gc, s=s, alpha=a, zorder=5)
-        # Annotate with Rs symbol
+        # Rs label in a circle at tip
         ax.annotate("Rs", xy=(tip_x, tip_y),
-                    fontsize=14, fontweight="bold", color=gc,
+                    fontsize=14, fontweight="bold",
                     ha="center", va="center", zorder=7,
-                    bbox=dict(boxstyle="circle,pad=0.3", fc=gc, ec="none", alpha=0.9),
-                    color="#04040C")
+                    color="#04040C",
+                    bbox=dict(boxstyle="circle,pad=0.3", fc=gc, ec="none", alpha=0.9))
 
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#1A1A3A"); ax.spines["bottom"].set_color("#1A1A3A")
