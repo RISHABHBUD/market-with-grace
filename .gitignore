@@ -9,3 +9,5 @@ venv/
 Thumbs.db
 stock-news-bot/client_secrets.json
 stock-news-bot/token.pickle
+stock-news-bot/posts/**/*.mp4
+stock-news-bot/posts/**/*.mp3

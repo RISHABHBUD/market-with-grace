@@ -341,6 +341,10 @@ def fetch_data(ticker, years=10):
             sp = h2["Close"].iloc[0]
             inv = 100000
             vals = [(d, (r["Close"] / sp) * inv) for d, r in h2.iterrows()]
+            # Filter out NaN values
+            vals = [(d, v) for d, v in vals if not (v != v)]  # NaN check
+            if len(vals) < 10:
+                continue
             sd, ed = h2.index[0], h2.index[-1]
             ev = vals[-1][1]
             cagr = ((ev / inv) ** (1 / max((ed - sd).days / 365, 1)) - 1) * 100
@@ -849,7 +853,8 @@ def create_investment_reel(display_name, ticker, output_path):
         temp_audiofile="temp_inv.m4a",
         remove_temp=True,
         logger=None,
-        preset="ultrafast",
+        preset="medium",       # better compression than ultrafast
+        ffmpeg_params=["-crf", "28"],  # quality factor — keeps file under 50MB
     )
     print(f"  [✓] Done -> {output_path}")
     return True
