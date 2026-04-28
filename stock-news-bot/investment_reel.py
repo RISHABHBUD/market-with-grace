@@ -156,7 +156,8 @@ def milestones(inv, ev):
 
 
 # ── Premium chart ──────────────────────────────────────────────
-def make_chart(data, reveal=1.0, w=1000, h=580):
+def make_chart(data, reveal=1.0, w=1080, h=900, cur_val=None):
+    """Full-width chart that always fills the entire figure."""
     vals   = data["vals"]
     n      = max(2, int(len(vals)*reveal))
     shown  = vals[:n]
@@ -165,65 +166,63 @@ def make_chart(data, reveal=1.0, w=1000, h=580):
     all_d  = [v[0] for v in vals]
     all_p  = [v[1] for v in vals]
     inv    = data["inv"]
-    is_up  = data["ev"] >= inv
-    lc     = "#00E676" if is_up else "#FF3D57"   # line color
-    gc     = "#00FF88" if is_up else "#FF2040"   # glow color
-    fc     = "#003320" if is_up else "#330010"   # fill color
+
+    # Color based on current tip value (not final value)
+    tip_val = prices[-1] if prices else inv
+    is_up   = tip_val >= inv
+    lc  = "#00E676" if is_up else "#FF3D57"
+    gc  = "#00FF88" if is_up else "#FF2040"
+    fc  = "#003320" if is_up else "#330010"
 
     fig, ax = plt.subplots(figsize=(w/100, h/100), dpi=100)
     fig.patch.set_facecolor("#04040C")
     ax.set_facecolor("#06060F")
 
+    # ALWAYS use full x and y range — chart never shrinks
     ax.set_xlim(all_d[0], all_d[-1])
-    ymin = min(all_p)*0.88
-    ymax = max(all_p)*1.10
+    ymin = min(all_p) * 0.85
+    ymax = max(all_p) * 1.12
     ax.set_ylim(ymin, ymax)
 
     if len(dates) > 1:
-        # Glow layers
-        for lw, a in [(14,0.04),(9,0.10),(5,0.25),(2.5,1.0)]:
+        for lw, a in [(16,0.04),(10,0.10),(5,0.28),(2.5,1.0)]:
             ax.plot(dates, prices, color=lc, linewidth=lw,
                     alpha=a, solid_capstyle="round", zorder=4)
-        # Fill
-        ax.fill_between(dates, prices, ymin, color=fc, alpha=0.6, zorder=2)
-        # Gradient fill using alpha
-        ax.fill_between(dates, prices, ymin, color=lc, alpha=0.08, zorder=3)
+        ax.fill_between(dates, prices, ymin, color=fc, alpha=0.55, zorder=2)
+        ax.fill_between(dates, prices, ymin, color=lc, alpha=0.07, zorder=3)
 
-    # Reference line
-    ax.axhline(y=inv, color="#FFFFFF", lw=1.2, ls="--", alpha=0.2, zorder=1)
+    # Reference line at Rs 1 lakh
+    ax.axhline(y=inv, color="#FFFFFF", lw=1.5, ls="--", alpha=0.25, zorder=1)
 
-    # Milestone horizontal lines
-    ms = milestones(inv, data["ev"])
-    for m in ms:
-        target = inv*m
+    # Milestone dotted lines
+    for m in milestones(inv, data["ev"]):
+        target = inv * m
         for i,(d,v) in enumerate(vals):
             if v >= target and i < n:
-                ax.axhline(y=target, color=gc, lw=0.6, ls=":", alpha=0.35)
+                ax.axhline(y=target, color=gc, lw=0.8, ls=":", alpha=0.3)
                 break
 
     # Glowing tip dot
     if len(dates) > 1:
-        for s,a in [(200,0.06),(100,0.15),(40,0.4),(12,1.0)]:
+        for s, a in [(300,0.05),(150,0.12),(50,0.4),(15,1.0)]:
             ax.scatter([dates[-1]], [prices[-1]], color=gc, s=s, alpha=a, zorder=6)
 
-    # Style
     ax.spines["top"].set_visible(False); ax.spines["right"].set_visible(False)
     ax.spines["left"].set_color("#1A1A3A"); ax.spines["bottom"].set_color("#1A1A3A")
-    ax.tick_params(colors="#C0C8E0", labelsize=10, length=0)  # bright tick labels
-    ax.set_facecolor("#06060F")
+    ax.tick_params(colors="#C0C8E0", labelsize=11, length=0)
 
-    def fv(v,_):
-        if v>=1e7: return f"₹{v/1e7:.0f}Cr"
-        if v>=1e5: return f"₹{v/1e5:.0f}L"
-        return f"₹{v:,.0f}"
+    def fv(v, _):
+        if v >= 1e7: return f"Rs{v/1e7:.0f}Cr"
+        if v >= 1e5: return f"Rs{v/1e5:.0f}L"
+        return f"Rs{v:,.0f}"
     ax.yaxis.set_major_formatter(plt.FuncFormatter(fv))
     ax.xaxis.set_major_formatter(matplotlib.dates.DateFormatter("%Y"))
     ax.grid(axis="y", color="#0C0C20", lw=0.8, zorder=0)
 
-    plt.tight_layout(pad=0.1)
+    # NO bbox_inches="tight" — use fixed size so chart always fills frame
+    plt.subplots_adjust(left=0.12, right=0.98, top=0.97, bottom=0.08)
     buf = BytesIO()
-    plt.savefig(buf, format="png", bbox_inches="tight", facecolor="#04040C",
-                dpi=100)
+    plt.savefig(buf, format="png", facecolor="#04040C", dpi=100)
     plt.close(fig); buf.seek(0)
     return Image.open(buf).convert("RGB")
 
@@ -306,21 +305,19 @@ def frame_intro(t, name, years, total=3.0):
 
 
 def frame_chart(t, data, cache, total=11.0):
-    """Chart section with all enhancements."""
-    reveal  = ease_io(progress(t, 0, total*0.88))
+    """Chart fills the screen. Header compact top. Value + milestone below."""
+    reveal  = ease_io(progress(t, 0, total * 0.92))  # slightly slower
     vals    = data["vals"]
     inv     = data["inv"]
 
-    # Current actual value at chart tip
     n_shown = max(1, int(len(vals) * reveal))
     cur_val = vals[n_shown-1][1]
-    below_inv = cur_val < inv  # chart is below 1 lakh
-
+    below_inv = cur_val < inv
     col    = C_RED if below_inv else C_GREEN
     glow_c = C_GLOW_R if below_inv else C_GLOW_G
 
-    # Background tints
-    tint = reveal * 0.07
+    # Background
+    tint = reveal * 0.06
     bg1  = lerp_col(C_BG1, glow_c, tint)
     bg2  = lerp_col(C_BG2, glow_c, tint*0.4)
     arr  = np.zeros((H, W, 3), dtype=np.uint8)
@@ -329,143 +326,127 @@ def frame_chart(t, data, cache, total=11.0):
     img = Image.fromarray(arr)
     d   = ImageDraw.Draw(img)
 
-    # ── Header — moved down, styled nicely ────────────────────
-    name    = data.get("dn", data["sym"].replace(".NS",""))
-    hdr_y   = 80   # pushed down from top
-
-    # Company name pill background
-    nf_  = font(52, bold=True)
-    nw_  = tw(d, name, nf_)
-    pill_pad = 28
-    d.rounded_rectangle([W//2-nw_//2-pill_pad, hdr_y-8,
-                          W//2+nw_//2+pill_pad, hdr_y+60],
-                         radius=16, fill=C_BG3)
+    # ── Compact header at top ──────────────────────────────────
+    name  = data.get("dn", data["sym"].replace(".NS",""))
+    hdr_y = 52
+    nf_   = font(48, bold=True)
+    # Name pill
+    nw_ = tw(d, name, nf_)
+    d.rounded_rectangle([W//2-nw_//2-24, hdr_y-6, W//2+nw_//2+24, hdr_y+56],
+                         radius=14, fill=C_BG3)
     d.text((cx(d,name,nf_), hdr_y), name, font=nf_, fill=C_GOLD)
+    # Sub line
+    sub = f"{data['sd'].year} → {data['ed'].year}  |  Rs 1 Lakh Journey"
+    d.text((cx(d,sub,font(26)), hdr_y+64), sub, font=font(26), fill=C_WHITE)
+    d.rectangle([80, hdr_y+100, W-80, hdr_y+102], fill=(*C_GOLD, 80))
 
-    # Sub line with year range — white, below name
-    sub = f"{data['sd'].year}  →  {data['ed'].year}   |   Rs 1 Lakh Journey"
-    sf  = font(28)
-    d.text((cx(d,sub,sf), hdr_y+70), sub, font=sf, fill=C_WHITE)
+    # ── Chart — fills most of screen ──────────────────────────
+    chart_y = hdr_y + 112
+    cw, ch  = W, H - chart_y - 280  # full width, leaves 280px below for counter+badge
 
-    # Thin gold divider
-    d.rectangle([80, hdr_y+108, W-80, hdr_y+110], fill=(*C_GOLD, 100))
-
-    # ── Chart — CENTERED ──────────────────────────────────────
-    cw, ch  = 1020, 680
-    chart_y = hdr_y + 125  # just below header
-
-    # Rebuild chart with correct color based on current value
     key = int(reveal * 200)
     if key not in cache:
-        cache[key] = make_chart(data, reveal=reveal, w=1020, h=680)
+        cache[key] = make_chart(data, reveal=reveal, w=cw, h=ch, cur_val=cur_val)
 
     chart_img = cache[key].resize((cw, ch), Image.LANCZOS)
-    zoom   = lerp(1.06, 1.0, ease_out3(progress(t, 0, 3.0)))
+    # Zoom effect
+    zoom   = lerp(1.04, 1.0, ease_out3(progress(t, 0, 3.0)))
     zw, zh = int(cw*zoom), int(ch*zoom)
     zoomed = chart_img.resize((zw, zh), Image.LANCZOS)
     ox, oy = (zw-cw)//2, (zh-ch)//2
-    img.paste(zoomed.crop((ox, oy, ox+cw, oy+ch)), ((W-cw)//2, chart_y))
+    img.paste(zoomed.crop((ox, oy, ox+cw, oy+ch)), (0, chart_y))
 
     chart_bot = chart_y + ch
 
-    # ── Value counter — TRUE sync, color changes with chart ────
+    # ── Value counter ──────────────────────────────────────────
     val_str = fmt_money_ascii(cur_val)
-    vf_     = font(82, bold=True)
-    val_y   = chart_bot + 18
+    vf_     = font(80, bold=True)
+    val_y   = chart_bot + 14
     for r in [6, 3]:
         d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_,
                fill=(*col, 20//r))
     d.text((cx(d,val_str,vf_), val_y), val_str, font=vf_, fill=col)
 
-    # ── Milestone — ONE square badge at a time ─────────────────
+    # ── Milestone — elegant text style, not a box ──────────────
     ms_list = milestones(inv, data["ev"])
-    badge_y = val_y + 96
     shown   = []
     for m in ms_list:
         target = inv * m
         for i,(dd,v) in enumerate(vals):
-            if v >= target:
-                if i/len(vals) <= reveal:
-                    shown.append((m, i/len(vals)))
+            if v >= target and i/len(vals) <= reveal:
+                shown.append((m, i/len(vals)))
                 break
 
-    # Show only the LATEST milestone as a square badge
     if shown:
         latest_m, latest_frac = shown[-1]
-        pop_p = progress(reveal, latest_frac, latest_frac+0.08)
-        sp_e  = clamp(spring(pop_p, s=14, d=0.35))
-        sq    = int(120 * sp_e)  # square size
-        bx    = W//2 - sq//2
-        if sq > 10:
-            # Square badge centered
-            d.rounded_rectangle([bx, badge_y, bx+sq, badge_y+sq],
-                                  radius=18, fill=C_BG3)
-            d.rounded_rectangle([bx, badge_y, bx+sq, badge_y+8],
-                                  radius=18, fill=col)
-            lbl = f"{latest_m}x"
-            lf_ = font(int(48*min(sp_e,1.0)), bold=True)
-            if sq > 50:
-                d.text((bx+cx(d,lbl,lf_,sq), badge_y+int(28*min(sp_e,1.0))),
-                       lbl, font=lf_, fill=col)
+        pop_p = progress(reveal, latest_frac, latest_frac+0.12)
+        sp_e  = clamp(spring(pop_p, s=12, d=0.4))
+        if sp_e > 0.1:
+            ms_y  = val_y + 96
+            # Glowing text style — no box
+            ms_txt = f"✦  {latest_m}x  ✦"
+            mf_    = font(int(56*min(sp_e,1.0)), bold=True)
+            # Glow layers
+            for r in [8, 5, 2]:
+                d.text((cx(d,ms_txt,mf_), ms_y), ms_txt, font=mf_,
+                       fill=(*col, 20//r))
+            d.text((cx(d,ms_txt,mf_), ms_y), ms_txt, font=mf_, fill=col)
+            # "RETURN" sub label
+            sub_ms = "RETURN ACHIEVED"
+            d.text((cx(d,sub_ms,font(28)), ms_y+int(62*min(sp_e,1.0))),
+                   sub_ms, font=font(28), fill=(*C_GOLD, int(200*sp_e)))
 
-    # ── Full-screen milestone FLASH — 1 second duration ────────
+    # ── Full-screen milestone FLASH — 2 seconds ────────────────
     for m, frac in shown:
-        flash_p = progress(reveal, frac, frac+0.10)  # 0.10 = ~1s at normal speed
+        flash_p = progress(reveal, frac, frac+0.18)  # ~2s
         if 0 < flash_p < 1:
             flash_e = ease_out3(1 - flash_p)
-            # Full screen overlay
             ov = Image.new("RGBA", img.size, (0,0,0,0))
             od = ImageDraw.Draw(ov)
-            od.rectangle([0,0,W,H], fill=(*col, int(140*flash_e)))
+            od.rectangle([0,0,W,H], fill=(*col, int(130*flash_e)))
             img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
             d   = ImageDraw.Draw(img)
-            # Big milestone text — stays readable
             ms_txt = f"{m}x RETURN!"
             mf     = font(148, bold=True)
-            # Shadow
-            d.text((cx(d,ms_txt,mf)+4, H//2-84), ms_txt, font=mf,
-                   fill=(0,0,0))
+            d.text((cx(d,ms_txt,mf)+4, H//2-84), ms_txt, font=mf, fill=(0,0,0))
             d.text((cx(d,ms_txt,mf), H//2-88), ms_txt, font=mf,
                    fill=(*C_GOLD, int(255*flash_e)))
-            # Sub text
-            sub2 = "Your investment multiplied!"
-            d.text((cx(d,sub2,font(44)), H//2+80), sub2, font=font(44),
+            d.text((cx(d,"Your investment multiplied!",font(44)), H//2+80),
+                   "Your investment multiplied!", font=font(44),
                    fill=(*C_WHITE, int(220*flash_e)))
-            # Particles burst
             rng2 = random.Random(m*77)
-            for _ in range(50):
+            for _ in range(60):
                 angle = rng2.uniform(0, 2*math.pi)
                 dist  = int(rng2.uniform(100, 500) * (1-flash_e))
                 px    = W//2 + int(math.cos(angle)*dist)
                 py    = H//2 + int(math.sin(angle)*dist*0.7)
-                ps    = rng2.randint(5, 16)
+                ps    = rng2.randint(5, 18)
                 pc    = C_GOLD if rng2.random() > 0.4 else col
-                a_p   = int(255*flash_e)
                 ov2   = Image.new("RGBA", img.size, (0,0,0,0))
                 od2   = ImageDraw.Draw(ov2)
-                od2.ellipse([px-ps, py-ps, px+ps, py+ps], fill=(*pc, a_p))
+                od2.ellipse([px-ps, py-ps, px+ps, py+ps],
+                            fill=(*pc, int(255*flash_e)))
                 img = Image.alpha_composite(img.convert("RGBA"), ov2).convert("RGB")
                 d   = ImageDraw.Draw(img)
             break
 
-    # ── Final zoom transition — ONLY after 100% complete ───────
+    # ── Final zoom transition at 100% ─────────────────────────
     if reveal >= 1.0:
-        zoom_p = ease_out5(progress(t, total*0.88, total))
+        zoom_p = ease_out5(progress(t, total*0.92, total))
         if zoom_p > 0:
             final_val = fmt_money_ascii(data["ev"])
-            fvs = int(lerp(82, 168, zoom_p))
+            fvs = int(lerp(80, 168, zoom_p))
             fvf = font(fvs, bold=True)
             fade_ov = Image.new("RGBA", img.size, (0,0,0,0))
             fade_d  = ImageDraw.Draw(fade_ov)
-            fade_d.rectangle([0,0,W,H], fill=(0,0,0,int(200*zoom_p)))
+            fade_d.rectangle([0,0,W,H], fill=(0,0,0,int(210*zoom_p)))
             img = Image.alpha_composite(img.convert("RGBA"), fade_ov).convert("RGB")
             d   = ImageDraw.Draw(img)
             d.text((cx(d,final_val,fvf), H//2-fvs//2), final_val,
                    font=fvf, fill=col)
 
-    # Brand
-    bf = font(30, bold=True)
-    d.text((cx(d,PAGE_NAME,bf), H-68), PAGE_NAME, font=bf, fill=C_GOLD)
+    bf = font(28, bold=True)
+    d.text((cx(d,PAGE_NAME,bf), H-60), PAGE_NAME, font=bf, fill=C_GOLD)
     d.rectangle([0, H-4, W, H], fill=C_GOLD)
     return np.array(img)
 
@@ -566,18 +547,18 @@ def frame_result(t, data, total=5.0):
             bx   = (W - sq_s)//2
             by   = cards_center_y - sq_s//2
 
-            # Particle burst for CAGR and Total Return
-            if has_burst and slot_t < 0.4:
-                burst_e = ease_out3(slot_t/0.4)
+            # Particle burst for CAGR and Total Return — MASSIVE
+            if has_burst and slot_t < 0.5:
+                burst_e = ease_out3(slot_t/0.5)
                 rng3    = random.Random(card_idx*333)
-                for _ in range(40):
+                for _ in range(120):  # 3x more particles
                     angle = rng3.uniform(0, 2*math.pi)
-                    dist  = int(rng3.uniform(60, 350) * burst_e)
+                    dist  = int(rng3.uniform(80, 520) * burst_e)
                     px    = W//2 + int(math.cos(angle)*dist)
-                    py    = cards_center_y + int(math.sin(angle)*dist*0.7)
-                    ps    = rng3.randint(4, 14)
-                    pc    = C_GOLD if rng3.random() > 0.4 else vc
-                    a_p   = int(220*(1-burst_e))
+                    py    = cards_center_y + int(math.sin(angle)*dist*0.8)
+                    ps    = rng3.randint(5, 20)  # bigger particles
+                    pc    = C_GOLD if rng3.random() > 0.35 else vc
+                    a_p   = int(255*(1-burst_e*0.7))
                     ov3   = Image.new("RGBA", img.size, (0,0,0,0))
                     od3   = ImageDraw.Draw(ov3)
                     od3.ellipse([px-ps, py-ps, px+ps, py+ps], fill=(*pc, a_p))
