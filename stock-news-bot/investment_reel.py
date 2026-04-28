@@ -459,7 +459,7 @@ def frame_chart(t, data, cache, total=11.0):
     return np.array(img)
 
 
-def frame_result(t, data, total=5.0):
+def frame_result(t, data, total=7.0):
     """
     Sequential square cards. 5 cards total.
     Each card has unique color theme.
@@ -550,7 +550,7 @@ def frame_result(t, data, total=5.0):
         ("TOTAL RETURN",  f"{(data['ev']/data['inv']-1)*100:.0f}%", col,   True),
     ]
 
-    SHOW_ALL_FROM = 4.2
+    SHOW_ALL_FROM = 4.2  # all 4 cards show together from 4.2s → 7.0s = 2.8s hold
     SQ = 400
     cards_center_y = H//2 + 160
 
@@ -780,7 +780,7 @@ def create_investment_reel(display_name, ticker, output_path):
     clips = [
         clip(frame_intro,  3.0,  name=display_name, years=data["yrs"]),
         clip(frame_chart,  11.0, data=data, cache=cache),
-        clip(frame_result, 5.0,  data=data),
+        clip(frame_result, 7.0,  data=data),
         clip(frame_outro,  2.0),
     ]
     video = concatenate_videoclips(clips)
