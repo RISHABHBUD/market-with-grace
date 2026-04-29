@@ -1,195 +1,181 @@
-from PIL import Image, ImageDraw, ImageFont
-import textwrap, re
+"""
+Instagram image post generator — cinematic midnight/neon theme.
+Matches the visual language of investment_reel.py and reel_gen.py.
+"""
+
+import re, math
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont, ImageChops
 from datetime import datetime
 from config import PAGE_NAME, PAGE_HANDLE
 
-WIDTH, HEIGHT = 1080, 1080
+W, H = 1080, 1080
 
-# Palette
-BG_TOP      = (225, 210, 255)
-BG_BOTTOM   = (255, 235, 248)
-CARD_BG     = (255, 255, 255)
-CARD_BORDER = (190, 160, 235)
-CARD_SHADOW = (185, 160, 225)
-ACCENT      = (160, 110, 220)
-BADGE_BG    = (240, 230, 255)
-BADGE_TEXT  = (120, 75, 195)
-TITLE_COLOR = (35, 20, 70)
-DATE_COLOR  = (170, 145, 200)
-FOOTER_BG   = (150, 100, 215)
-FOOTER_TEXT = (255, 255, 255)
-FOOTER_SUB  = (230, 215, 255)
-DIVIDER     = (230, 218, 250)
+# ── Cinematic palette ──────────────────────────────────────────
+C_BG_TOP  = (9,   8,  30)
+C_BG_BOT  = (22, 12,  52)
+C_PANEL   = (22, 28,  58)
+C_TEXT    = (236,239, 255)
+C_MUTED   = (142,153, 196)
+C_CYAN    = (32, 224, 255)
+C_VIOLET  = (154,106, 255)
+C_GOLD    = (255,210,  92)
+C_GREEN   = (0,  243, 146)
+C_RED     = (255, 80, 122)
 
 
-def get_font(size, bold=False):
-    candidates = (
-        ["arialbd.ttf", "Arial_Bold.ttf", "DejaVuSans-Bold.ttf",
-         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
-        if bold else
-        ["arial.ttf", "Arial.ttf", "DejaVuSans.ttf",
-         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
-    )
-    for p in candidates:
-        try:
-            return ImageFont.truetype(p, size)
-        except Exception:
-            continue
+def font(size, bold=False):
+    for p in (["arialbd.ttf","Arial_Bold.ttf","DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
+               if bold else
+               ["arial.ttf","Arial.ttf","DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]):
+        try: return ImageFont.truetype(p, size)
+        except: pass
     return ImageFont.load_default()
 
+def tw(d, txt, f):
+    b = d.textbbox((0,0), txt, font=f); return b[2]-b[0]
 
-def gradient_bg(size, top, bottom):
-    img = Image.new("RGB", size)
-    draw = ImageDraw.Draw(img)
-    w, h = size
-    for y in range(h):
-        t = y / h
-        c = tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(3))
-        draw.line([(0, y), (w, y)], fill=c)
+def cx(d, txt, f, w=W):
+    return (w - tw(d,txt,f)) // 2
+
+def lerp_col(c1, c2, t):
+    return tuple(int(c1[i]+(c2[i]-c1[i])*t) for i in range(3))
+
+
+def make_canvas():
+    """Gradient background with diagonal light sweeps + film grain."""
+    arr = np.zeros((H, W, 3), dtype=np.uint8)
+    for y in range(H):
+        arr[y] = lerp_col(C_BG_TOP, C_BG_BOT, y/H)
+    img = Image.fromarray(arr)
+    d   = ImageDraw.Draw(img)
+    # Diagonal sweeps
+    for i in range(5):
+        x = int(W*0.2*i - W*0.1)
+        d.polygon([(x,0),(x+100,0),(x-220,H),(x-320,H)], fill=(40,30,82,30))
+    # Film grain
+    rng   = np.random.default_rng(77)
+    noise = rng.integers(0,16,size=(H,W),dtype=np.uint8)
+    layer = Image.fromarray(noise,"L").convert("RGB")
+    img   = ImageChops.screen(img, layer)
     return img
 
 
-def tw(draw, text, font):
-    bb = draw.textbbox((0, 0), text, font=font)
-    return bb[2] - bb[0]
+def soft_glow(img, x, y, radius, color):
+    ov = Image.new("RGBA", img.size, (0,0,0,0))
+    od = ImageDraw.Draw(ov)
+    for r in range(6,0,-1):
+        rr=radius+(6-r)*20; a=int(65*r/6)
+        od.ellipse([x-rr,y-rr,x+rr,y+rr], fill=(*color,a))
+    return Image.alpha_composite(img.convert("RGBA"),ov).convert("RGB")
 
 
-def th(draw, text, font):
-    bb = draw.textbbox((0, 0), text, font=font)
-    return bb[3] - bb[1]
+def glow_text(img, txt, f, x, y, color, glow):
+    ov = Image.new("RGBA", img.size, (0,0,0,0))
+    od = ImageDraw.Draw(ov)
+    for r in [8,5,3]:
+        od.text((x,y), txt, font=f, fill=(*glow, 80//max(1,r//2)))
+    img = Image.alpha_composite(img.convert("RGBA"),ov).convert("RGB")
+    ImageDraw.Draw(img).text((x,y), txt, font=f, fill=color)
+    return img
 
 
-def centered_x(draw, text, font):
-    return (WIDTH - tw(draw, text, font)) // 2
-
-
-def draw_centered(draw, text, font, y, color):
-    draw.text((centered_x(draw, text, font), y), text, font=font, fill=color)
-
-
-def fit_text_centered(draw, text, font, max_w):
-    """Wrap text so each line fits within max_w, return list of lines."""
+def fit_lines(d, text, f, max_w):
     words = text.split()
-    lines, current = [], ""
-    for word in words:
-        test = (current + " " + word).strip()
-        if tw(draw, test, font) <= max_w:
-            current = test
+    lines, cur = [], ""
+    for w in words:
+        test = (cur+" "+w).strip()
+        if tw(d,test,f) <= max_w: cur = test
         else:
-            if current:
-                lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
+            if cur: lines.append(cur)
+            cur = w
+    if cur: lines.append(cur)
     return lines
 
 
 def create_post_image(article, output_path):
-    img  = gradient_bg((WIDTH, HEIGHT), BG_TOP, BG_BOTTOM)
-    draw = ImageDraw.Draw(img)
+    img = make_canvas()
+    img = soft_glow(img, W-80, 80, 160, C_VIOLET)
+    d   = ImageDraw.Draw(img)
 
-    # ── Card geometry ──────────────────────────────────────────
-    FOOT_H   = 118          # footer height
-    FOOT_PAD = 20           # gap between card and footer
-    MARGIN   = 52
+    title = re.sub(r"[^\x00-\x7F]+","",article["title"]).strip()
+    title = re.sub(r"\s*[-|]\s*[A-Z][^\-|]{2,30}$","",title).strip()
 
-    foot_t  = HEIGHT - MARGIN - FOOT_H
-    card_t  = MARGIN
-    card_b  = foot_t - FOOT_PAD
-    card_l  = MARGIN
-    card_r  = WIDTH - MARGIN
+    # ── Top header bar ─────────────────────────────────────────
+    d.rounded_rectangle([40,40,W-40,168], radius=26, fill=C_PANEL)
+    d.rectangle([40,40,W-40,48], fill=C_CYAN)
 
-    # Shadow
-    draw.rounded_rectangle(
-        [card_l + 7, card_t + 7, card_r + 7, card_b + 7],
-        radius=32, fill=CARD_SHADOW
-    )
-    # Card
-    draw.rounded_rectangle(
-        [card_l, card_t, card_r, card_b],
-        radius=32, fill=CARD_BG, outline=CARD_BORDER, width=2
-    )
-    # Left accent strip
-    draw.rounded_rectangle(
-        [card_l, card_t, card_l + 10, card_b],
-        radius=32, fill=ACCENT
-    )
+    # "STOCK NEWS" badge
+    bf  = font(28,True)
+    blb = "STOCK  NEWS"
+    bw  = tw(d,blb,bf)+48
+    bx  = (W-bw)//2
+    d.rounded_rectangle([bx,58,bx+bw,104], radius=22, fill=(30,36,72))
+    d.rectangle([bx,58,bx+bw,64], fill=C_CYAN)
+    d.text((bx+24,66), blb, font=bf, fill=C_CYAN)
 
-    inner_l = card_l + 10   # after strip
-    inner_r = card_r
-    inner_w = inner_r - inner_l - 60   # usable text width with padding
-
-    # ── STOCK NEWS badge ───────────────────────────────────────
-    bf    = get_font(26, bold=True)
-    blbl  = "STOCK  NEWS"
-    bw    = tw(draw, blbl, bf) + 52
-    bh    = 46
-    bx    = (WIDTH - bw) // 2
-    by    = card_t + 44
-    draw.rounded_rectangle([bx, by, bx + bw, by + bh], radius=23, fill=BADGE_BG)
-    draw.text((bx + 26, by + 9), blbl, font=bf, fill=BADGE_TEXT)
-
-    # ── Date ──────────────────────────────────────────────────
-    df   = get_font(25)
+    # Date
     date = datetime.now().strftime("%d %B %Y")
-    dy   = by + bh + 14
-    draw_centered(draw, date, df, dy, DATE_COLOR)
+    df   = font(24)
+    d.text((cx(d,date,df),114), date, font=df, fill=C_MUTED)
 
-    # ── Divider ───────────────────────────────────────────────
-    div_y = dy + th(draw, date, df) + 18
-    draw.rectangle([inner_l + 30, div_y, inner_r - 30, div_y + 2], fill=DIVIDER)
+    # ── Main card ──────────────────────────────────────────────
+    card_t, card_b = 188, H-148
+    # Shadow
+    d.rounded_rectangle([48,card_t+6,W-48+6,card_b+6], radius=28, fill=(6,6,20))
+    # Card
+    d.rounded_rectangle([48,card_t,W-48,card_b], radius=28, fill=C_PANEL)
+    # Cyan top strip
+    d.rounded_rectangle([48,card_t,W-48,card_t+8], radius=28, fill=C_CYAN)
+    # Left accent
+    d.rounded_rectangle([48,card_t,58,card_b], radius=28, fill=(*C_VIOLET,180))
 
-    # ── Headline block — auto-size font to fill space ──────────
-    title = re.sub(r"[^\x00-\x7F]+", "", article["title"]).strip()
-    # Strip trailing source attribution e.g. "- Moneycontrol" or "| ET"
-    title = re.sub(r"\s*[-|]\s*[A-Z][^\-|]{2,30}$", "", title).strip()
+    inner_l = 72
+    inner_r = W-60
+    inner_w = inner_r - inner_l
 
-    # Space available for headline
-    hl_top    = div_y + 28
-    hl_bottom = card_b - 40
+    # ── Headline — auto-size, vertically centered ──────────────
+    hl_top    = card_t + 32
+    hl_bottom = card_b - 32
+    available = hl_bottom - hl_top
 
-    available_h = hl_bottom - hl_top
-
-    best_font, best_lines = get_font(40, bold=True), [title]
-    for fsize in [76, 68, 60, 52, 46, 40]:
-        f     = get_font(fsize, bold=True)
-        lines = fit_text_centered(draw, title, f, inner_w)
-        lh    = fsize + 14
-        total = len(lines) * lh
-        if total <= available_h:
-            best_font, best_lines = f, lines
+    best_f, best_lines = font(40,True), [title]
+    for fsize in [80,70,62,54,46,40]:
+        f_  = font(fsize,True)
+        lns = fit_lines(d, title, f_, inner_w)
+        lh  = fsize+16
+        if len(lns)*lh <= available:
+            best_f, best_lines = f_, lns
             break
 
-    lh      = best_font.size + 14
-    block_h = len(best_lines) * lh
-    hl_y    = hl_top + (available_h - block_h) // 2   # vertically centered
+    lh      = best_f.size+16
+    block_h = len(best_lines)*lh
+    hl_y    = hl_top + (available-block_h)//2
 
     for line in best_lines:
-        draw_centered(draw, line, best_font, hl_y, TITLE_COLOR)
+        img = glow_text(img, line, best_f,
+                        cx(d,line,best_f), hl_y, C_TEXT, C_CYAN)
+        d   = ImageDraw.Draw(img)
         hl_y += lh
 
+    # ── Footer bar ─────────────────────────────────────────────
+    foot_t = H-138
+    d.rounded_rectangle([40,foot_t,W-40,H-40], radius=24, fill=C_PANEL)
+    d.rectangle([40,foot_t,W-40,foot_t+6], fill=C_CYAN)
 
+    bf2 = font(40,True)
+    hf2 = font(24)
+    brand  = PAGE_NAME
+    handle = PAGE_HANDLE+"   |   Daily Market Updates"
 
-    # ── Footer ────────────────────────────────────────────────
-    draw.rounded_rectangle(
-        [MARGIN, foot_t, WIDTH - MARGIN, foot_t + FOOT_H],
-        radius=26, fill=FOOTER_BG
-    )
+    # Auto-shrink handle if too wide
+    while tw(d,handle,hf2) > W-120 and len(handle)>10:
+        handle = handle[:-4]+"..."
 
-    brand_f  = get_font(40, bold=True)
-    handle_f = get_font(24)
-    brand    = PAGE_NAME
-    handle   = PAGE_HANDLE + "   |   Daily Market Updates"
-
-    # Clamp handle text if too wide
-    while tw(draw, handle, handle_f) > (WIDTH - MARGIN * 2 - 60) and len(handle) > 10:
-        handle = handle[:-4] + "..."
-
-    brand_y  = foot_t + 14
-    handle_y = foot_t + 64
-
-    draw_centered(draw, brand,  brand_f,  brand_y,  FOOTER_TEXT)
-    draw_centered(draw, handle, handle_f, handle_y, FOOTER_SUB)
+    d.text((cx(d,brand,bf2),  foot_t+16), brand,  font=bf2, fill=C_GOLD)
+    d.text((cx(d,handle,hf2), foot_t+68), handle, font=hf2, fill=C_MUTED)
 
     img.save(output_path, quality=95)
     print(f"       saved -> {output_path}")
