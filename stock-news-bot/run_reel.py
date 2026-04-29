@@ -1,12 +1,16 @@
 """
 StockDev.in — Reel Auto Poster
 Fetches one fresh article, generates a Stock Spotlight reel, posts to Instagram.
-Run: python run_reel.py
+
+Run normally:   python run_reel.py
+Run locally:    python run_reel.py --test
+  --test skips posting, just generates the reel locally
 """
 
 import os
 import sys
 import re
+import argparse
 from datetime import datetime
 
 from fetcher   import fetch_all_articles
@@ -18,7 +22,14 @@ from config    import OUTPUT_FOLDER
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--test", action="store_true",
+                        help="Generate reel locally without posting")
+    args = parser.parse_args()
+
     print(f"\n🎬 StockDev.in Reel Generator — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    if args.test:
+        print("  [TEST MODE] — reel will be generated but NOT posted")
     print("=" * 60)
 
     # 1. Fetch articles
@@ -62,6 +73,11 @@ def main():
 
     # 4. Upload + publish to Instagram + Facebook
     print("\n[4/6] Uploading and publishing to Instagram...")
+    if args.test:
+        print("  [TEST MODE] Skipping upload and posting.")
+        print(f"\n✅ Test reel saved at: {reel_path}\n")
+        return
+
     video_url = upload_video_to_cloudinary(reel_path)
     post_reel_to_instagram(video_url, caption)
     try:
