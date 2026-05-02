@@ -238,12 +238,15 @@ def frame_point(t, point_text, number, accent, total=4.0):
 
     # Point text card — slides up from bottom
     card_y = int(lerp(H, 460, eo3(prog(t,0.1,0.6))))
-    card_h = H - card_y - 170
+    card_h = max(200, H - card_y - 170)  # ensure minimum height
+    if card_y + card_h > H - 160:
+        card_h = H - card_y - 160
+    if card_h < 50:
+        card_h = 50
     d.rounded_rectangle([46,card_y+6,W-46+6,card_y+card_h+6], radius=28, fill=(6,6,20))
     d.rounded_rectangle([46,card_y,W-46,card_y+card_h], radius=28, fill=C_PANEL)
     d.rounded_rectangle([46,card_y,W-46,card_y+8], radius=28, fill=accent)
     d.rounded_rectangle([46,card_y,58,card_y+card_h], radius=28, fill=(*accent,100))
-
     # Point text — word by word reveal
     words   = point_text.split()
     n_words = max(1, int(len(words)*min(prog(t,0.3,total*0.9),1.0)))
