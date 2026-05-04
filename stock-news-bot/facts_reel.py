@@ -153,8 +153,338 @@ def get_todays_fact():
 
 # ── Frame builders ─────────────────────────────────────────────
 
+
+def frame_counter(t, fact, fact_number, total_facts, accent, total=2.0):
+    """0-2s: '1/100' counter reveal with category heading."""
+    img = base_canvas(t, tint=accent)
+    img = soft_glow(img, W//2, H//2-100, 280, accent)
+    d   = ImageDraw.Draw(img)
+    if t < 0.1:
+        flash = int(180*(1-t/0.1))
+        ov = Image.new("RGBA", img.size, (255,255,255,flash))
+        img = Image.alpha_composite(img.convert("RGBA"),ov).convert("RGB")
+        d   = ImageDraw.Draw(img)
+    p = eo5(prog(t, 0.0, 0.8))
+    hdr = "STOCK MARKET FACTS"
+    hf  = font(38, True)
+    d.text((cx(d,hdr,hf), int(H//2-380+20*(1-p))), hdr, font=hf,
+           fill=(*C_MUTED, int(220*p)))
+    counter = f"{fact_number}/{total_facts}"
+    for fsize in [200, 170, 150]:
+        cf = font(fsize, True)
+        if tw(d, counter, cf) <= W-80: break
+    cy = H//2 - 200
+    img = glow_text(img, counter, cf, cx(d,counter,cf),
+                    int(cy+40*(1-p)), C_TEXT, accent)
+    d   = ImageDraw.Draw(img)
+    lw_ = int((W-120)*p)
+    d.rectangle([W//2-lw_//2, H//2+cf.size-180,
+                 W//2+lw_//2, H//2+cf.size-176], fill=(*accent,180))
+    cat = fact["category"].replace("_"," ").upper()
+    cbf = font(28, True)
+    cw_ = tw(d,cat,cbf)+48
+    bx  = (W-cw_)//2
+    by  = int(H//2+cf.size-160+20*(1-p))
+    d.rounded_rectangle([bx,by,bx+cw_,by+54], radius=27, fill=C_PANEL)
+    d.rectangle([bx,by,bx+cw_,by+6], fill=accent)
+    d.text((bx+24,by+14), cat, font=cbf, fill=accent)
+    sub = "Today's Market Fact"
+    sf  = font(34)
+    d.text((cx(d,sub,sf), by+74), sub, font=sf, fill=(*C_MUTED, int(200*p)))
+    hud_footer(img, d)
+    return np.array(img)
+
+
 def frame_hook(t, fact, accent, total=3.0):
-    """0-3s: Dramatic hook with orbital rings and flash."""
+    """Hook with orbital rings centered on screen."""
+    img = base_canvas(t, tint=accent)
+    img = soft_glow(img, W//2, H//2, 260, accent)  # glow at true center
+    d   = ImageDraw.Draw(img)
+    # Orbital rings centered at H//2 (true screen center)
+    for i in range(3):
+        rot = int((t*80+i*120)%360)
+        rad = 200+i*48
+        box = [W//2-rad, H//2-rad, W//2+rad, H//2+rad]  # centered
+        d.arc(box, start=rot, end=rot+240, fill=(*accent,130), width=3)
+        d.arc(box, start=rot+130, end=rot+310, fill=(*C_VIOLET,100), width=2)
+    p_h = eo5(prog(t, 0.1, 1.0))
+    sub = fact["hook_sub"]
+    sf  = font(32)
+    d.text((cx(d,sub,sf), int(H//2-320+20*(1-p_h))), sub, font=sf,
+           fill=(*C_MUTED, int(200*p_h)))
+    hook  = fact["hook"]
+    max_w = W-80
+    for fsize in [76,66,58,50,44]:
+        hf    = font(fsize, True)
+        lines = wrap_text(d, hook, hf, max_w)
+        if len(lines)*(fsize+20) <= 500: break
+    lh = hf.size+20; total_h = len(lines)*lh
+    y  = H//2 - total_h//2
+    for line in lines:
+        img = glow_text(img, line, hf, cx(d,line,hf),
+                        int(y+30*(1-p_h)), C_TEXT, accent)
+        d   = ImageDraw.Draw(img)
+        y  += lh
+    hud_footer(img, d)
+    return np.array(img)
+
+
+def frame_point(t, point_text, number, total_points, accent, total=6.0):
+    """Each point: compact design, smooth character-by-character reveal."""
+    img = base_canvas(t, tint=accent)
+    img = soft_glow(img, W//2, H//2, 300, accent)
+    d   = ImageDraw.Draw(img)
+    top_y = 80
+    # Progress dots
+    dot_r = 14; dot_gap = 44
+    dots_w = total_points*(dot_r*2) + (total_points-1)*(dot_gap-dot_r*2)
+    dx = (W-dots_w)//2
+    for i in range(total_points):
+        filled = i < number
+        if filled:
+            d.ellipse([dx+i*dot_gap, top_y, dx+i*dot_gap+dot_r*2, top_y+dot_r*2],
+                      fill=accent)
+        else:
+            d.ellipse([dx+i*dot_gap, top_y, dx+i*dot_gap+dot_r*2, top_y+dot_r*2],
+                      outline=C_MUTED, width=2)
+    pt_lbl = f"POINT  {number}"
+    plf    = font(32, True)
+    d.text((cx(d,pt_lbl,plf), top_y+40), pt_lbl, font=plf, fill=accent)
+    d.rectangle([80, top_y+86, W-80, top_y+89], fill=(*accent,120))
+
+    # Character-by-character reveal — slower, smoother pace
+    chars_total = len(point_text)
+    # Start at 0.4s, finish at 70% of clip — leaves 30% for reading
+    chars_shown = int(chars_total * min(prog(t, 0.4, total*0.70), 1.0))
+    visible     = point_text[:chars_shown]
+
+    text_area_h = H - top_y - 200 - 160
+    for fsize in [58, 50, 44, 38, 34]:
+        pf    = font(fsize, True)
+        lines = wrap_text(d, point_text, pf, W-100)
+        if len(lines)*(fsize+22) <= text_area_h: break
+    vis_lines = wrap_text(d, visible, pf, W-100) if visible else []
+    lh        = pf.size+22
+    block_h   = len(wrap_text(d, point_text, pf, W-100))*lh
+    text_y    = top_y + 110 + (text_area_h - block_h)//2
+    for line in vis_lines:
+        img = glow_text(img, line, pf, cx(d,line,pf), text_y, C_TEXT, accent)
+        d   = ImageDraw.Draw(img)
+        text_y += lh
+    # Blinking cursor — slower blink (2x per second)
+    if chars_shown < chars_total and int(t*2)%2==0:
+        d.rectangle([W//2-3, text_y, W//2+3, text_y+pf.size], fill=accent)
+    bar_y = H - 170
+    bar_w = int((W-120) * min(prog(t, 0.1, 0.5), 1.0))
+    d.rounded_rectangle([60, bar_y, 60+bar_w, bar_y+6], radius=3, fill=accent)
+    hud_footer(img, d)
+    return np.array(img)
+
+
+def frame_summary(t, fact, accent, total=5.0):
+    """
+    Summary: 3 compact cards centered on screen.
+    Cards fit their content tightly. Bubbles float up.
+    CTA pulses at bottom.
+    """
+    img = base_canvas(t, tint=accent)
+    img = soft_glow(img, W//2, H//2, 340, accent)
+    d   = ImageDraw.Draw(img)
+
+    points = fact["points"][:3]
+    pf     = font(34)
+    pad    = 24   # internal card padding
+
+    # ── Pre-calculate card heights based on actual text ────────
+    card_heights = []
+    for pt in points:
+        lines = wrap_text(d, pt, pf, W-200)
+        # height = top_pad + number_circle(56) + gap(12) + lines + bottom_pad
+        text_h = len(lines)*(pf.size+10)
+        card_h = max(120, pad + 56 + 12 + text_h + pad)
+        card_heights.append(card_h)
+
+    gap     = 20
+    total_h = sum(card_heights) + gap*(len(points)-1)
+
+    # ── "KEY TAKEAWAYS" header ─────────────────────────────────
+    hdr_h   = 80
+    cta_h   = 90
+    spacing = 24
+    # Total block: header + spacing + cards + spacing + cta
+    block_h = hdr_h + spacing + total_h + spacing + cta_h
+    # Center the whole block
+    block_y = (H - block_h) // 2
+
+    p_hdr = eo3(prog(t, 0.0, 0.5))
+    img   = glow_text(img, "KEY TAKEAWAYS", font(42,True),
+                      cx(d,"KEY TAKEAWAYS",font(42,True)),
+                      block_y, C_TEXT, accent)
+    d = ImageDraw.Draw(img)
+    uw = tw(d,"KEY TAKEAWAYS",font(42,True))
+    d.rectangle([W//2-uw//2, block_y+52, W//2+uw//2, block_y+56],
+                fill=(*accent,160))
+
+    # ── Cards ──────────────────────────────────────────────────
+    card_y = block_y + hdr_h + spacing
+    for i, (pt, ch) in enumerate(zip(points, card_heights)):
+        entry_p = eo5(prog(t, i*0.2, i*0.2+0.6))
+        slide_x = int(80*(1-entry_p))
+        by      = card_y
+
+        # Shadow
+        d.rounded_rectangle([46+slide_x+3, by+3, W-46+3, by+ch+3],
+                             radius=18, fill=(4,4,16))
+        # Card
+        d.rounded_rectangle([46+slide_x, by, W-46, by+ch],
+                             radius=18, fill=C_PANEL)
+        d.rounded_rectangle([46+slide_x, by, W-46, by+7], radius=18, fill=accent)
+
+        # Number circle — top left
+        cx_c = 46+slide_x+46; cy_c = by+pad+28
+        d.ellipse([cx_c-24, cy_c-24, cx_c+24, cy_c+24], fill=(*accent,220))
+        nf = font(30,True)
+        d.text((cx_c-tw(d,str(i+1),nf)//2, cy_c-16), str(i+1),
+               font=nf, fill=C_BG_TOP)
+
+        # Point text — right of circle, wraps naturally
+        lines = wrap_text(d, pt, pf, W-200)
+        ty    = by + pad
+        for line in lines:
+            d.text((46+slide_x+86, ty), line, font=pf, fill=C_TEXT)
+            ty += pf.size + 10
+
+        # Bubble particles
+        if entry_p > 0.4:
+            rng = random.Random(i*77 + int(t*6))
+            ov  = Image.new("RGBA", img.size, (0,0,0,0))
+            od  = ImageDraw.Draw(ov)
+            for _ in range(6):
+                bx_   = rng.randint(46+slide_x+60, W-60)
+                phase = (t*0.5 + rng.uniform(0,1)) % 1.0
+                by_   = by - int(phase*80)
+                br    = rng.randint(3,9)
+                ba    = int(100*(1-phase)*entry_p)
+                od.ellipse([bx_-br, by_-br, bx_+br, by_+br],
+                           outline=(*accent, ba), width=2)
+            img = Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB")
+            d   = ImageDraw.Draw(img)
+
+        card_y += ch + gap
+
+    # ── CTA button ─────────────────────────────────────────────
+    cta_y = block_y + hdr_h + spacing + total_h + spacing
+    p_cta = eo3(prog(t, 1.0, 2.0))
+    if p_cta > 0:
+        pulse = 1 + 0.05*math.sin(t*5)
+        cta   = fact["cta"]
+        cf    = font(36, True)
+        cw_   = int((tw(d,cta,cf)+60)*pulse)
+        bx    = (W-cw_)//2
+        img   = soft_glow(img, W//2, cta_y+36, 70, accent)
+        d     = ImageDraw.Draw(img)
+        d.rounded_rectangle([bx, cta_y, bx+cw_, cta_y+68], radius=34, fill=accent)
+        d.text((bx+(cw_-tw(d,cta,cf))//2, cta_y+14), cta, font=cf,
+               fill=(*C_BG_TOP, int(255*p_cta)))
+
+    hud_footer(img, d)
+    return np.array(img)
+
+
+def frame_outro(t, accent, total=2.0):
+    """Outro CTA."""
+    img = base_canvas(t, tint=C_CYAN)
+    img = soft_glow(img, W//2, H//2-200, 220, C_CYAN)
+    d   = ImageDraw.Draw(img)
+    img = glow_text(img, PAGE_NAME, font(88,True),
+                    cx(d,PAGE_NAME,font(88,True)), H//2-220, C_TEXT, C_CYAN)
+    d = ImageDraw.Draw(img)
+    d.text((cx(d,PAGE_HANDLE,font(38)),H//2-110),
+           PAGE_HANDLE, font=font(38), fill=C_MUTED)
+    for i,line in enumerate(["Follow for daily","market facts & insights!"]):
+        cf = font(46,True if i==1 else False)
+        d.text((cx(d,line,cf),H//2+20+i*68), line, font=cf, fill=C_TEXT)
+    bw,bh = 420,84; bx=W//2-bw//2; by=H//2+200
+    d.rounded_rectangle([bx,by,bx+bw,by+bh], radius=42, fill=accent)
+    d.text((bx+(bw-tw(d,"FOLLOW NOW",font(40,True)))//2,by+22),
+           "FOLLOW NOW", font=font(40,True), fill=C_BG_TOP)
+    hud_footer(img, d)
+    return np.array(img)
+
+
+# ── Main ───────────────────────────────────────────────────────
+def create_facts_reel(fact, output_path):
+    accent   = CAT_COLORS.get(fact.get("category","market_basics"), C_CYAN)
+    points   = fact["points"][:3]
+    fact_id  = fact.get("id","fact_001")
+    fact_num = int(fact_id.split("_")[-1]) if "_" in fact_id else 1
+    print(f"  Fact #{fact_num}: {fact['hook'][:55]}")
+    print(f"  Category: {fact['category']} | Accent: {accent}")
+
+    def clip(fn, dur, **kw):
+        return VideoClip(lambda t: fn(t,**kw).astype(np.uint8),
+                         duration=dur).with_fps(FPS)
+
+    print("  Rendering sections...")
+    clips = [
+        clip(frame_counter, 2.0, fact=fact, fact_number=fact_num,
+             total_facts=100, accent=accent),
+        clip(frame_hook,    3.0, fact=fact, accent=accent),
+        clip(frame_point,   6.0, point_text=points[0], number=1,
+             total_points=3, accent=accent),
+        clip(frame_point,   6.0, point_text=points[1], number=2,
+             total_points=3, accent=accent),
+        clip(frame_point,   6.0, point_text=points[2], number=3,
+             total_points=3, accent=accent),
+        clip(frame_summary, 5.0, fact=fact, accent=accent),
+        clip(frame_outro,   2.0, accent=accent),
+    ]
+    # Crossfade transitions between clips
+    from moviepy import VideoClip as VC
+    FADE = 0.4  # seconds of crossfade
+
+    def crossfade(clip_a, clip_b, fade=FADE):
+        total = clip_a.duration + clip_b.duration - fade
+        def make_frame(t):
+            if t < clip_a.duration - fade:
+                return clip_a.get_frame(t)
+            elif t > clip_a.duration:
+                return clip_b.get_frame(t - clip_a.duration + fade)
+            else:
+                alpha = (t - (clip_a.duration - fade)) / fade
+                fa = clip_a.get_frame(t)
+                fb = clip_b.get_frame(t - clip_a.duration + fade)
+                return (fa*(1-alpha) + fb*alpha).astype(np.uint8)
+        return VC(make_frame, duration=total).with_fps(FPS)
+
+    video = clips[0]
+    for c in clips[1:]:
+        video = crossfade(video, c)
+    total_dur = sum(c.duration for c in clips) - FADE*(len(clips)-1)
+
+    mfiles = sorted(
+        [f for f in os.listdir(MUSIC_DIR) if f.endswith((".mp3",".wav"))],
+        key=lambda x: "cinematic" in x.lower(), reverse=True
+    ) if os.path.exists(MUSIC_DIR) else []
+    print(f"  Music: {mfiles}")
+    if mfiles:
+        try:
+            audio = AudioFileClip(os.path.join(MUSIC_DIR, mfiles[0]))
+            audio = audio.subclipped(0, min(total_dur, audio.duration))
+            video = video.with_audio(audio)
+            print("  [✓] Music embedded")
+        except Exception as e:
+            print(f"  [!] Music error: {e}")
+
+    print("  Writing video...")
+    video.write_videofile(
+        output_path, fps=FPS, codec="libx264",
+        audio_codec="aac", temp_audiofile="temp_facts.m4a",
+        remove_temp=True, logger=None,
+        preset="medium", ffmpeg_params=["-crf","28"]
+    )
+    print(f"  [✓] Saved -> {output_path}")
+    return True
     img = base_canvas(t, tint=accent)
     img = soft_glow(img, W//2, H//2-200, 260, accent)
     d   = ImageDraw.Draw(img)
@@ -213,184 +543,3 @@ def frame_hook(t, fact, accent, total=3.0):
     hud_footer(img, d)
     return np.array(img)
 
-
-def frame_point(t, point_text, number, accent, total=4.0):
-    """Each point slides in dramatically with number badge."""
-    img = base_canvas(t, tint=accent)
-    d   = ImageDraw.Draw(img)
-
-    p_in = eo5(prog(t, 0.0, 0.5))
-
-    # Large number badge — slides from right
-    badge_size = 180
-    badge_x = int(lerp(W+50, W//2-badge_size//2, p_in))
-    badge_y = 220
-    # Glow behind badge
-    img = soft_glow(img, W//2, badge_y+badge_size//2, badge_size//2+40, accent)
-    d   = ImageDraw.Draw(img)
-    d.rounded_rectangle([badge_x, badge_y, badge_x+badge_size, badge_y+badge_size],
-                         radius=36, fill=C_PANEL)
-    d.rounded_rectangle([badge_x, badge_y, badge_x+badge_size, badge_y+10],
-                         radius=36, fill=accent)
-    nf = font(96,True)
-    d.text((badge_x+cx(d,str(number),nf,badge_size), badge_y+42),
-           str(number), font=nf, fill=accent)
-
-    # Point text card — slides up from bottom
-    card_y = int(lerp(H, 460, eo3(prog(t,0.1,0.6))))
-    card_h = max(200, H - card_y - 170)  # ensure minimum height
-    if card_y + card_h > H - 160:
-        card_h = H - card_y - 160
-    if card_h < 50:
-        card_h = 50
-    d.rounded_rectangle([46,card_y+6,W-46+6,card_y+card_h+6], radius=28, fill=(6,6,20))
-    d.rounded_rectangle([46,card_y,W-46,card_y+card_h], radius=28, fill=C_PANEL)
-    d.rounded_rectangle([46,card_y,W-46,card_y+8], radius=28, fill=accent)
-    d.rounded_rectangle([46,card_y,58,card_y+card_h], radius=28, fill=(*accent,100))
-    # Point text — word by word reveal
-    words   = point_text.split()
-    n_words = max(1, int(len(words)*min(prog(t,0.3,total*0.9),1.0)))
-    visible = " ".join(words[:n_words])
-    pf      = font(46,True)
-    lines   = wrap_text(d, visible, pf, W-130)
-    ty      = card_y + 32
-    for line in lines[:6]:
-        img = glow_text(img, line, pf, cx(d,line,pf), ty, C_TEXT, accent)
-        d   = ImageDraw.Draw(img)
-        ty += 62
-
-    # Blinking cursor
-    if n_words < len(words) and int(t*3)%2==0:
-        d.rectangle([W//2-3,ty,W//2+3,ty+46], fill=accent)
-
-    hud_footer(img, d)
-    return np.array(img)
-
-
-def frame_cta(t, fact, accent, total=2.0):
-    """15-17s: All 3 points visible + CTA."""
-    img = base_canvas(t, tint=accent)
-    img = soft_glow(img, W//2, H//2, 300, accent)
-    d   = ImageDraw.Draw(img)
-
-    p = eo3(prog(t,0,total))
-
-    # Header
-    d.rounded_rectangle([46,42,W-46,160], radius=26, fill=C_PANEL)
-    d.rectangle([46,42,W-46,50], fill=accent)
-    img = glow_text(img,"KEY TAKEAWAYS",font(40,True),
-                    cx(d,"KEY TAKEAWAYS",font(40,True)),68,C_TEXT,accent)
-    d = ImageDraw.Draw(img)
-
-    # 3 mini point cards
-    points = fact["points"]
-    card_h = 200
-    gap    = 16
-    total_cards_h = len(points)*card_h + (len(points)-1)*gap
-    start_y = int(H//2 - total_cards_h//2 + 20*(1-p))
-
-    for i, pt in enumerate(points[:3]):
-        by = start_y + i*(card_h+gap)
-        # Staggered entry
-        entry_p = eo3(prog(t, i*0.15, i*0.15+0.5))
-        bx_off  = int(60*(1-entry_p))
-        d.rounded_rectangle([46+bx_off,by,W-46,by+card_h],
-                             radius=20, fill=C_PANEL)
-        d.rounded_rectangle([46+bx_off,by,W-46,by+8], radius=20, fill=accent)
-        # Number circle
-        d.ellipse([60+bx_off,by+card_h//2-28,116+bx_off,by+card_h//2+28],
-                  fill=(*accent,180))
-        d.text((60+bx_off+cx(d,str(i+1),font(36,True),56),
-                by+card_h//2-20), str(i+1), font=font(36,True), fill=C_BG_TOP)
-        # Point text (truncated)
-        short = pt[:80]+"..." if len(pt)>80 else pt
-        pf    = font(30)
-        for line in wrap_text(d, short, pf, W-200)[:3]:
-            d.text((130+bx_off, by+20), line, font=pf, fill=C_TEXT)
-            by += 38
-
-    # CTA text
-    cta_y = start_y + total_cards_h + 30
-    img = glow_text(img, fact["cta"], font(38,True),
-                    cx(d,fact["cta"],font(38,True)), cta_y, C_GOLD, C_GOLD)
-    d = ImageDraw.Draw(img)
-
-    hud_footer(img, d)
-    return np.array(img)
-
-
-def frame_outro(t, accent, total=2.0):
-    """17-19s: Brand outro."""
-    img = base_canvas(t, tint=C_CYAN)
-    img = soft_glow(img, W//2, H//2-200, 220, C_CYAN)
-    d   = ImageDraw.Draw(img)
-
-    p = eo5(prog(t,0,total))
-
-    img = glow_text(img, PAGE_NAME, font(88,True),
-                    cx(d,PAGE_NAME,font(88,True)), H//2-220, C_TEXT, C_CYAN)
-    d = ImageDraw.Draw(img)
-    d.text((cx(d,PAGE_HANDLE,font(38)),H//2-110),
-           PAGE_HANDLE, font=font(38), fill=C_MUTED)
-
-    for i,line in enumerate(["Follow for daily","market facts & insights!"]):
-        cf = font(46,True if i==1 else False)
-        d.text((cx(d,line,cf),H//2+20+i*68), line, font=cf, fill=C_TEXT)
-
-    bw,bh = 420,84; bx=W//2-bw//2; by=H//2+200
-    d.rounded_rectangle([bx,by,bx+bw,by+bh], radius=42, fill=accent)
-    d.text((bx+(bw-tw(d,"FOLLOW NOW",font(40,True)))//2,by+22),
-           "FOLLOW NOW", font=font(40,True), fill=C_BG_TOP)
-
-    hud_footer(img, d)
-    return np.array(img)
-
-# ── Main ───────────────────────────────────────────────────────
-def create_facts_reel(fact, output_path):
-    """Generate a cinematic facts reel from a fact dict."""
-    accent = CAT_COLORS.get(fact.get("category","market_basics"), C_CYAN)
-    points = fact["points"][:3]
-
-    print(f"  Fact: {fact['hook'][:60]}")
-    print(f"  Category: {fact['category']} | Accent: {accent}")
-
-    def clip(fn, dur, **kw):
-        return VideoClip(lambda t: fn(t,**kw).astype(np.uint8),
-                         duration=dur).with_fps(FPS)
-
-    print("  Rendering sections...")
-    clips = [
-        clip(frame_hook,  3.0, fact=fact, accent=accent),
-        clip(frame_point, 4.0, point_text=points[0], number=1, accent=accent),
-        clip(frame_point, 4.0, point_text=points[1], number=2, accent=accent),
-        clip(frame_point, 4.0, point_text=points[2], number=3, accent=accent),
-        clip(frame_cta,   2.0, fact=fact, accent=accent),
-        clip(frame_outro, 2.0, accent=accent),
-    ]
-    video = concatenate_videoclips(clips)
-    total_dur = sum(c.duration for c in clips)
-
-    # Music — prefer cinematic tracks
-    mfiles = sorted(
-        [f for f in os.listdir(MUSIC_DIR) if f.endswith((".mp3",".wav"))],
-        key=lambda x: "cinematic" in x.lower(), reverse=True
-    ) if os.path.exists(MUSIC_DIR) else []
-    print(f"  Music: {mfiles}")
-    if mfiles:
-        try:
-            audio = AudioFileClip(os.path.join(MUSIC_DIR, mfiles[0]))
-            audio = audio.subclipped(0, min(total_dur, audio.duration))
-            video = video.with_audio(audio)
-            print("  [✓] Music embedded")
-        except Exception as e:
-            print(f"  [!] Music error: {e}")
-
-    print("  Writing video...")
-    video.write_videofile(
-        output_path, fps=FPS, codec="libx264",
-        audio_codec="aac", temp_audiofile="temp_facts.m4a",
-        remove_temp=True, logger=None,
-        preset="medium", ffmpeg_params=["-crf","28"]
-    )
-    print(f"  [✓] Saved -> {output_path}")
-    return True
